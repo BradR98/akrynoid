@@ -29,7 +29,7 @@ Balancing: `runBatch({ createGame, bot: bots.tracker({ target: o => o.ball.x, ma
 - **Paddle zones:** 5 equal zones, -60 / -35 / ~0 (+-8 deg spread) / +35 / +60 deg off vertical.
 - **Bricks:** `#` Standard (1 HP, row colour), `S` Silver (3 HP, shade per hit), `G` Gold (indestructible), `.` empty. Collision is row/col index math (<= 4 cells per sub-step).
 - **Speed:** +2% per destroyed brick (cap 1.8x), reset on life loss and each new level.
-- **Capsules (10% from Standard/Silver):** E expand (+50%), C catch, L laser (C and L replace each other), D disruption (+2 balls).
+- **Capsules (10% from Standard/Silver):** E expand (+50%), C catch, L laser (C and L replace each other), D disruption (+2 balls), P extra life (pink; only drops after level 10, ~6% of drops, lives cap at 5 - at the cap it pays 1000 points).
 - **States:** `LEVEL_CLEAR` was added to `AnchorLoop` (`PLAY -> LEVEL_CLEAR -> PLAY`); `GAMEOVER` at 0 lives or after the last level (win).
 - Tests: `npm test` (lib + `test/akrynoid.test.mjs`).
 

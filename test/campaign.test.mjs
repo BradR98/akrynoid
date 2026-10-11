@@ -119,4 +119,27 @@ const count = (rows, ch) => rows.join('').split(ch).length - 1;
   t.ok(A.loop.state === State.PLAY && A.game.leaderboard.length === 1 && A.game.internals.paddle.x >= A.game.internals.paddle.w / 2, 'restart keeps the saved board and restores paddle bounds');
 }
 
+// ---------------------------------------------------------------- extra-life pill (P)
+{
+  const mkG = () => { const input = new AnchorInput({}); const loop = new AnchorLoop({ update: (d) => game.update(d), draw() {}, raf: null, caf: () => {}, now: () => 0, autoPause: false, maxDt: Infinity });
+    const game = G.createGame({ input, rng: () => 0, loop }, { storage: null, nameEntry: false, levels: Array(12).fill(['############', '############']) }); loop.start(); return { game, loop, input, I: game.internals }; };
+  const dropType = (g) => { const b = g.I.balls[0]; g.I.caps.forEach((c) => { c.active = false; }); b.active = true; b.stuck = false; b.x = 15; b.y = G.GRID_TOP + 2 * 14 + 4; b.dx = 0; b.dy = -1; g.game.update(1 / 300);
+    const c = g.I.caps.find((q) => q.active); return c ? c.type : null; };
+  const g = mkG();
+  for (let lvl = 1; lvl <= 12; lvl++) {
+    const ty = dropType(g);
+    if (lvl === 1 || lvl === 10) t.ok(ty && ty !== 'P', `level ${lvl}: drop is never P (got ${ty})`);
+    if (lvl === 11) t.ok(ty === 'P', `level ${lvl}: P can drop (rng forced -> ${ty})`);
+    g.game.nextLevel();
+  }
+  const h = mkG(), x0 = h.I.paddle.x, caps = h.I;
+  h.input.feed(180, false); h.game.update(1 / 60);
+  const lives0 = h.game.observe().lives; caps.spawnCapsule(h.I.paddle.x, h.I.paddle.top, 'P'); h.game.update(1 / 60);
+  t.ok(h.game.observe().lives === lives0 + 1, 'catching P grants +1 life');
+  for (let k = 0; k < 6; k++) { caps.spawnCapsule(h.I.paddle.x, h.I.paddle.top, 'P'); h.game.update(1 / 60); }
+  t.ok(h.game.observe().lives === G.MAX_LIVES, `lives cap at ${G.MAX_LIVES}`);
+  const sc = h.game.observe().score; caps.spawnCapsule(h.I.paddle.x, h.I.paddle.top, 'P'); h.game.update(1 / 60);
+  t.ok(h.game.observe().lives === G.MAX_LIVES && h.game.observe().score >= sc + G.EXTRA_LIFE_BONUS, 'at the cap, P pays a score bonus instead');
+}
+
 process.exit(t.summary());

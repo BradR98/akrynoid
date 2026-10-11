@@ -1,5 +1,8 @@
 # Changelog
 
+## Phase 6.1
+- Extra-life pill `P` (+1 life): drops only from level 11 on (after level 10), 6% of drops; lives cap at 5 (bonus 1000 at the cap). `sw.js` cache `akrynoid-v7`.
+
 ## Phase 6
 - Procedural 100-level campaign (`levels.js`), replacing the three hand-written levels; `validateLevel` + tests over all 100.
 - Top-10 leaderboard with 3-character names (`leaderboard.js`), new `NAME_ENTRY` loop state, on-canvas initials wheel on the steering rail (+ keyboard on desktop), leaderboard on the game-over screen, round counter in the HUD.

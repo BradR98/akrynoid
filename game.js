@@ -50,7 +50,9 @@ export const SILVER_HP = 3;
 const ROW_COLORS = ['#e53935', '#fb8c00', '#fdd835', '#43a047', '#00acc1', '#1e88e5', '#8e24aa', '#ec407a'];
 const SILVER_SHADES = ['', '#7d8696', '#aeb6c4', '#e8ecf3'];   // indexed by remaining HP
 const CAP_TYPES = ['E', 'C', 'L', 'D'];
-const CAP_COLORS = { E: '#1e88e5', C: '#43a047', L: '#e53935', D: '#00acc1' };
+const CAP_COLORS = { E: '#1e88e5', C: '#43a047', L: '#e53935', D: '#00acc1', P: '#ec407a' };
+/** Extra-life pill (P): never drops until AFTER level EXTRA_LIFE_AFTER (i.e. from level 11), then P_SHARE of drops; lives cap at MAX_LIVES. */
+export const EXTRA_LIFE_AFTER = 10, P_SHARE = 0.06, MAX_LIVES = 5, EXTRA_LIFE_BONUS = 1000;
 
 /** Name-entry wheel: 26 letters + DEL + END; one symbol per ENTRY_STEP logical px of finger travel; ignore input briefly after game over. */
 const ENTRY_SYMS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').concat(['DEL', 'END']);
@@ -265,7 +267,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
     addScore(kind === KIND.SILVER ? 50 : 10);
     destroyed++; speedMult = Math.min(MAX_SPEED_MULT, speedMult * SPEED_STEP);
     emit('brick', kind);
-    if (rng() < DROP_CHANCE) spawnCapsule(((i % COLS) + 0.5) * BW, GRID_TOP + ((i / COLS | 0) + 0.5) * BH, CAP_TYPES[(rng() * CAP_TYPES.length) | 0]);
+    if (rng() < DROP_CHANCE) spawnCapsule(((i % COLS) + 0.5) * BW, GRID_TOP + ((i / COLS | 0) + 0.5) * BH, (level + 1 > EXTRA_LIFE_AFTER && rng() < P_SHARE) ? 'P' : CAP_TYPES[(rng() * CAP_TYPES.length) | 0]);
   }
   function spawnCapsule(x, y, type) {
     for (const c of caps) if (!c.active) { c.active = true; c.x = x; c.y = y; c.type = type; return c; }
@@ -338,6 +340,9 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
       case 'E': paddle.targetW = PADDLE_W * EXPAND_FACTOR; break;                       // Expand: +50% width
       case 'C': catchOn = true; laserOn = false; break;                                  // Catch (replaces Laser)
       case 'L': laserOn = true; catchOn = false; break;                                  // Laser (replaces Catch)
+      case 'P':                                                                          // Player: +1 life (a full set of lives pays a bonus instead)
+        if (lives < MAX_LIVES) { lives++; emit('life', lives); } else addScore(EXTRA_LIFE_BONUS);
+        break;
       case 'D': {                                                                        // Disruption: +2 balls from the current ball
         const src = firstBall(); if (!src) break;
         for (let k = -1; k <= 1; k += 2) {
