@@ -5,6 +5,9 @@
  *                                                    (update / observe / outcome / stats) plus draw(ctx).
  *   mount(stageEl, canvasEl)                         browser wiring: canvas scaling, AnchorInput, AnchorLoop.
  *
+ * Phase 3 adds: split-screen input (rail steers, action zone fires/releases via input 'action'), an anti-stall monitor on
+ * every ball, screen shake and a pooled particle emitter.
+ *
  * Design notes
  *  - Paddle X is bound strictly to `input.getX()` (the input's clamp range is narrowed to keep the paddle on-screen).
  *  - Ball direction is a unit vector; speed is a separate scalar, so "constant speed" and "+2% per brick" are trivial.
@@ -21,11 +24,15 @@ export const W = 360, H = 640;                       // logical board (portrait 
 export const COLS = 12, BW = W / COLS, BH = 14;      // 12 x 30px bricks span the board exactly
 export const GRID_TOP = 84, MAX_ROWS = 14;
 export const HUD_H = 40;                             // top wall sits under the HUD bar
-export const PADDLE_Y = 512, PADDLE_H = 12, PADDLE_W = 64, EXPAND_FACTOR = 1.5;
+export const PADDLE_Y = 488, PADDLE_H = 12, PADDLE_W = 64, EXPAND_FACTOR = 1.5;
 export const BALL_R = 5, BASE_SPEED = 280, SPEED_STEP = 1.02, MAX_SPEED_MULT = 1.8, MAX_BALLS = 8;
 export const START_LIVES = 3, DROP_CHANCE = 0.10;
 export const CAP_W = 30, CAP_H = 14, CAP_SPEED = 110, MAX_CAPSULES = 10;
 export const LASER_SPEED = 520, LASER_COOLDOWN = 0.14, MAX_LASERS = 12;
+export const STEER_FRAC = 0.2;                      // bottom 20% of the screen is the steering rail; the rest is the action zone
+export const STALL_TIME = 3, STALL_VY = 0.3, STALL_VX = 0.05, STALL_NUDGE = 0.3;   // anti-stall (direction components, unit vector)
+export const GOLD_SHAKE_MULT = 1.2;                  // ball speed multiplier from which a Gold hit shakes the screen
+export const MAX_PARTICLES = 128;
 const MAX_STEP = 4;                                   // max px a ball travels per collision sub-step (anti-tunnelling)
 const MIN_VY = 0.2;                                   // keeps the ball from going (near-)horizontal forever
 
@@ -74,8 +81,22 @@ class Paddle {
 
 /** Pooled ball. (dx,dy) is a unit vector; speed comes from the game. */
 class Ball {
-  constructor() { this.active = false; this.stuck = false; this.x = 0; this.y = 0; this.dx = 0; this.dy = -1; this.off = 0; }
-  launch(angle) { this.stuck = false; this.dx = Math.sin(angle); this.dy = -Math.cos(angle); }
+  constructor() { this.active = false; this.stuck = false; this.x = 0; this.y = 0; this.dx = 0; this.dy = -1; this.off = 0; this.flatT = 0; this.vertT = 0; }
+  launch(angle) { this.stuck = false; this.dx = Math.sin(angle); this.dy = -Math.cos(angle); this.flatT = this.vertT = 0; }
+  /**
+   * Anti-stall monitor (passive; call once per step for a free-flying ball). If |vy| stays dangerously low (flat bounce) or
+   * |vx| stays ~0 (pure vertical loop) for STALL_TIME seconds, nudge that component by STALL_NUDGE and renormalise.
+   * The ball's velocity is (dx,dy)*speed, so the nudge is expressed on the unit direction. @returns {boolean} true if nudged
+   */
+  watch(dt) {
+    this.flatT = Math.abs(this.dy) < STALL_VY ? this.flatT + dt : 0;
+    this.vertT = Math.abs(this.dx) < STALL_VX ? this.vertT + dt : 0;
+    if (this.flatT <= STALL_TIME && this.vertT <= STALL_TIME) return false;
+    if (this.flatT > STALL_TIME) this.dy += (this.dy < 0 ? -1 : 1) * STALL_NUDGE;
+    if (this.vertT > STALL_TIME) this.dx += (this.dx < 0 || (this.dx === 0 && this.x > W / 2) ? -1 : 1) * STALL_NUDGE;
+    const n = Math.hypot(this.dx, this.dy); this.dx /= n; this.dy /= n;
+    this.flatT = this.vertT = 0; return true;
+  }
   /** Keep the ball from travelling (almost) horizontally. */
   guard() {
     if (Math.abs(this.dy) < MIN_VY) {
@@ -83,6 +104,42 @@ class Ball {
       this.dx = (this.dx < 0 ? -1 : 1) * Math.sqrt(1 - MIN_VY * MIN_VY);
     }
   }
+}
+
+/** Pooled particle emitter: ring buffer of fading, gravity-affected squares. Uses its own PRNG so VFX never perturb gameplay RNG. */
+class Particles {
+  constructor(n = MAX_PARTICLES) {
+    this.n = n; this.head = 0; this.seed = 0x9e3779b9;
+    this.x = new Float32Array(n); this.y = new Float32Array(n); this.vx = new Float32Array(n); this.vy = new Float32Array(n);
+    this.life = new Float32Array(n); this.max = new Float32Array(n); this.size = new Float32Array(n); this.col = new Array(n).fill('#fff');
+  }
+  rnd() { let s = this.seed; s ^= s << 13; s ^= s >>> 17; s ^= s << 5; this.seed = s >>> 0; return this.seed / 4294967296; }
+  /** Burst of 5-10 squares in `color`, spraying outward. */
+  burst(x, y, color) {
+    const count = 5 + ((this.rnd() * 6) | 0);
+    for (let k = 0; k < count; k++) {
+      const i = this.head; this.head = (this.head + 1) % this.n;
+      const a = this.rnd() * 6.2832, v = 50 + this.rnd() * 130;
+      this.x[i] = x + (this.rnd() - 0.5) * BW * 0.6; this.y[i] = y + (this.rnd() - 0.5) * BH * 0.5;
+      this.vx[i] = Math.cos(a) * v; this.vy[i] = Math.sin(a) * v - 60;
+      this.life[i] = this.max[i] = 0.35 + this.rnd() * 0.35; this.size[i] = 2 + ((this.rnd() * 3) | 0); this.col[i] = color;
+    }
+  }
+  step(dt) {
+    for (let i = 0; i < this.n; i++) {
+      if (this.life[i] <= 0) continue;
+      this.life[i] -= dt; this.vy[i] += 520 * dt; this.x[i] += this.vx[i] * dt; this.y[i] += this.vy[i] * dt;
+    }
+  }
+  draw(ctx) {
+    for (let i = 0; i < this.n; i++) {
+      if (this.life[i] <= 0) continue;
+      ctx.globalAlpha = this.life[i] / this.max[i]; ctx.fillStyle = this.col[i];
+      ctx.fillRect(this.x[i] - this.size[i] / 2, this.y[i] - this.size[i] / 2, this.size[i], this.size[i]);
+    }
+    ctx.globalAlpha = 1;
+  }
+  get active() { let c = 0; for (let i = 0; i < this.n; i++) if (this.life[i] > 0) c++; return c; }
 }
 
 class Capsule { constructor() { this.active = false; this.x = 0; this.y = 0; this.type = 'E'; } }
@@ -146,7 +203,11 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   const lasers = Array.from({ length: MAX_LASERS }, () => new Laser());
 
   let level = 0, lives = START_LIVES, score = 0, high = 0, destroyed = 0, minLives = START_LIVES;
-  let speedMult = 1, catchOn = false, laserOn = false, laserCd = 0, wasDown = false, won = false;
+  let speedMult = 1, catchOn = false, laserOn = false, laserCd = 0, won = false, stalls = 0;
+  let shake = 0, lastDraw = 0;
+  const fx = new Particles();
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const kick = (mag) => { if (mag > shake) shake = mag; };
   let scoreStr = '000000', highStr = '000000';
   const pad6 = (n) => String(n).padStart(6, '0');
   try { high = storage ? (parseInt(storage.getItem(HS_KEY), 10) || 0) : 0; } catch (_) { high = 0; }
@@ -171,10 +232,14 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   }
 
   /* ---- bricks ---- */
-  function damageBrick(i, dmg) {
+  function damageBrick(i, dmg, fromBall) {
     const kind = bricks.kind[i], res = bricks.damage(i, dmg);
-    if (res === 0) { emit('gold'); return; }
+    if (res === 0) {
+      if (fromBall && kind === KIND.GOLD && speedMult >= GOLD_SHAKE_MULT) kick(3 + 4 * (speedMult - 1) / (MAX_SPEED_MULT - 1));   // hard knock at speed
+      emit('gold'); return;
+    }
     if (res === 1) { addScore(5); emit('hard'); return; }
+    fx.burst(((i % COLS) + 0.5) * BW, GRID_TOP + ((i / COLS | 0) + 0.5) * BH, kind === KIND.SILVER ? SILVER_SHADES[1] : ROW_COLORS[(i / COLS | 0) % ROW_COLORS.length]);
     addScore(kind === KIND.SILVER ? 50 : 10);
     destroyed++; speedMult = Math.min(MAX_SPEED_MULT, speedMult * SPEED_STEP);
     emit('brick', kind);
@@ -217,7 +282,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
     else if (ay > ax + 1e-6) b.dy = hitNy > 0 ? Math.abs(b.dy) : -Math.abs(b.dy);    // top/bottom hit -> flip Y
     else { b.dx = hitNx > 0 ? Math.abs(b.dx) : -Math.abs(b.dx); b.dy = hitNy > 0 ? Math.abs(b.dy) : -Math.abs(b.dy); }  // exact corner
     b.guard();
-    damageBrick(best, 1);
+    damageBrick(best, 1, true);
   }
 
   /* ---- balls ---- */
@@ -293,7 +358,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
         if (l.y < HUD_H) { l.active = false; break; }
         const r = Math.floor((l.y - GRID_TOP) / BH), c = Math.floor(l.x / BW);
         if (r >= 0 && r < bricks.rows && c >= 0 && c < COLS && bricks.kind[r * COLS + c] !== KIND.EMPTY) {
-          damageBrick(r * COLS + c, 1); l.active = false;                                // 1 damage; gold just absorbs the shot
+          damageBrick(r * COLS + c, 1, false); l.active = false;                                // 1 damage; gold just absorbs the shot
         }
       }
     }
@@ -305,7 +370,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   }
   function loseLife() {
     lives--; minLives = Math.min(minLives, lives); emit('life', lives);
-    clearPools(); resetPowerups(); speedMult = 1;                                        // velocity reset
+    clearPools(); resetPowerups(); speedMult = 1; kick(9);                                // velocity reset + shake
     if (lives > 0) serve(); else { saveHigh(); emit('gameover'); loop.gameOver(); }
   }
 
@@ -313,13 +378,11 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
     /** Advance one simulation step (called by AnchorLoop only while PLAY). */
     update(dt) {
       paddle.sync(input, dt);
-      const down = input.isDown(), tap = down && !wasDown; wasDown = down;
       if (laserCd > 0) laserCd -= dt;
-      if (tap) { if (anyStuck()) releaseStuck(); else if (laserOn) fireLasers(); }
       for (const b of balls) {
         if (!b.active) continue;
         if (b.stuck) { b.off = Math.max(-paddle.w / 2, Math.min(paddle.w / 2, b.off)); b.x = paddle.x + b.off; b.y = paddle.top - BALL_R; }
-        else moveBall(b, dt);
+        else { moveBall(b, dt); if (b.active && b.watch(dt)) { stalls++; emit('stall'); } }
       }
       updateLasers(dt); updateCapsules(dt);
 
@@ -332,20 +395,23 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
       if (activeBalls() === 0) loseLife();                                               // loss condition
     },
 
-    /** Treat a currently-held pointer as already handled (call when a tap was consumed by the UI, e.g. START -> PLAY). */
-    syncInput() { wasDown = input.isDown(); },
-
     /** Move to the next level (call while in LEVEL_CLEAR, then loop.start()). */
-    nextLevel() { level = Math.min(level + 1, levels.length - 1); loadLevel(); wasDown = input.isDown(); },
+    nextLevel() { level = Math.min(level + 1, levels.length - 1); loadLevel(); },
     /** Fresh run (call from GAMEOVER, then loop.reset(); loop.start()). */
     restart() {
       level = 0; lives = START_LIVES; minLives = START_LIVES; score = 0; scoreStr = pad6(0); destroyed = 0; won = false;
-      loadLevel(); wasDown = input.isDown();
+      loadLevel(); stalls = 0;
     },
 
     /** Render the whole frame to the main canvas (logical 360x640 coordinates). */
     draw(ctx) {
       ctx.fillStyle = '#05060f'; ctx.fillRect(0, 0, W, H);
+      // VFX clock: wall-clock based so shake / particles keep animating on LEVEL_CLEAR and GAMEOVER screens too
+      const t = now(), fdt = lastDraw ? Math.min(0.05, (t - lastDraw) / 1000) : 0; lastDraw = t;
+      fx.step(fdt);
+      shake *= Math.exp(-fdt * 10); if (shake < 0.2) shake = 0;
+      ctx.save();
+      if (shake > 0) ctx.translate((fx.rnd() - 0.5) * 2 * shake, (fx.rnd() - 0.5) * 2 * shake);
       // playfield frame
       ctx.fillStyle = '#0b0f26'; ctx.fillRect(0, HUD_H, W, H - HUD_H);
 
@@ -360,6 +426,8 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
         ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(x + 1, y + BH - 3, BW - 2, 2);
         if (k === KIND.GOLD) { ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillRect(x + 4, y + 5, 6, 2); }
       }
+
+      fx.draw(ctx);
 
       // capsules
       ctx.font = 'bold 11px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -413,6 +481,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
         const sub = st === State.START ? 'TAP TO START' : st === State.PAUSE ? 'TAP TO RESUME' : st === State.LEVEL_CLEAR ? 'GET READY...' : 'TAP TO RETRY';
         ctx.fillText(sub, W / 2, 310);
       }
+      ctx.restore();
     },
 
     /* ---- Anchor headless contract ---- */
@@ -422,16 +491,24 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
                lives, score, level: level + 1, bricksLeft: bricks.remaining, balls: activeBalls() };
     },
     outcome: () => (won ? 'win' : 'lose'),
-    stats: () => ({ score, level: level + 1, destroyed, minLives, lives }),
+    stats: () => ({ score, level: level + 1, destroyed, minLives, lives, stalls }),
     get won() { return won; },
     get speedMult() { return speedMult; },
     get speed() { return speed(); },
     get flags() { return { catchOn, laserOn, expanded: paddle.targetW > PADDLE_W }; },
     /** Direct access to the pooled entities (tests / debug tooling). */
-    internals: { paddle, bricks, balls, caps, lasers, spawnCapsule, applyCapsule },
+    get shake() { return shake; },
+    internals: { paddle, bricks, balls, caps, lasers, fx, spawnCapsule, applyCapsule, kick },
   };
 
-  loadLevel(); wasDown = input.isDown();
+  // Action zone (top 80%): launch caught balls, else fire lasers. Never touches paddle X. Registered before any UI handler
+  // so a tap that merely starts / resumes the game (non-PLAY state) is not also treated as an in-game action.
+  input.listen('action', () => {
+    if (loop.state !== State.PLAY) return;
+    if (anyStuck()) releaseStuck(); else if (laserOn) fireLasers();
+  });
+
+  loadLevel();
   return game;
 }
 
@@ -453,15 +530,14 @@ export function mount(stage, canvas) {
 
   let game = null, loop = null, advanceTimer = 0;
   const input = new AnchorInput({
-    container: stage, width: W, height: H, trackpadFrac: 0.15, label: 'TRACKPAD  -  slide to move, tap to launch / fire',
-    on: {
-      onDown: () => {
-        if (loop.state === State.START) { game.syncInput(); loop.start(); }
-        else if (loop.state === State.PAUSE) { game.syncInput(); loop.resume(); }
-        else if (loop.state === State.GAMEOVER) { game.restart(); loop.reset(); loop.start(); }
-      },
-    },
+    container: stage, width: W, height: H, steerFrac: STEER_FRAC, label: 'STEERING RAIL  -  slide to move  |  tap above to launch / fire',
+    on: { onDown: uiTap, onAction: uiTap },       // any touch drives the menu screens (START / PAUSE / GAMEOVER)
   });
+  function uiTap() {
+    if (loop.state === State.START) loop.start();
+    else if (loop.state === State.PAUSE) loop.resume();
+    else if (loop.state === State.GAMEOVER) { game.restart(); loop.reset(); loop.start(); }
+  }
   loop = new AnchorLoop({
     update: (dt) => game.update(dt),                       // update(delta) hook
     draw: () => game.draw(ctx),                            // draw(ctx) hook

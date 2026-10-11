@@ -12,7 +12,7 @@ const mk = (opts = {}, rngFn = mulberry32(5)) => {
   loop.start();
   return { input, loop, game, I: game.internals };
 };
-const tap = (input) => { input.feed(input.getX(), false); input.feed(input.getX(), true); };
+const tap = (input) => input.act();            // a tap in the action zone
 const place = (b, x, y, dx, dy) => { b.active = true; b.stuck = false; b.x = x; b.y = y; b.dx = dx; b.dy = dy; };
 const cellCenter = (r, c) => [(c + 0.5) * G.BW, G.GRID_TOP + (r + 0.5) * G.BH];
 
@@ -168,14 +168,103 @@ const cellCenter = (r, c) => [(c + 0.5) * G.BW, G.GRID_TOP + (r + 0.5) * G.BH];
   t.ok(I.bricks.remaining === 1, 'gold does not block level clear');
 }
 
+// ---- input segregation (fake DOM): rail steers, action zone only fires onAction
+{
+  const mkEl = () => { const o = { style: {}, children: [], attrs: {}, listeners: {}, parentNode: null,
+    appendChild(c) { c.parentNode = o; o.children.push(c); }, removeChild() {}, addEventListener(t, f) { o.listeners[t] = f; },
+    removeEventListener() {}, setAttribute() {}, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 360, height: 640 }) }; return o; };
+  const doc = { createElement: mkEl }; let actions = 0, downs = 0, ups = 0;
+  const input = new AnchorInput({ container: mkEl(), document: doc, width: 360, height: 640, steerFrac: 0.2, on: { onAction: () => actions++, onDown: () => downs++, onUp: () => ups++ } });
+  const pe = (x, y, id = 1, type = 'touch', buttons = 1) => ({ clientX: x, clientY: y, pointerId: id, pointerType: type, buttons, preventDefault() {} });
+  const L = input.el.listeners;
+  t.ok(input.railTop === 512 && input.strip.style.height === '20%', 'rail = bottom 20% (y >= 512 of 640); strip drawn 20% tall');
+  L.pointerdown(pe(300, 100)); t.ok(actions === 1 && input.getX() === 180 && !input.isDown(), 'tap in action zone fires onAction, does NOT move X or start steering');
+  L.pointermove(pe(40, 100)); t.ok(input.getX() === 180, 'movement in the action zone never steers');
+  L.pointerdown(pe(300, 511)); t.ok(actions === 2 && input.getX() === 180, 'y just above the rail is still the action zone');
+  L.pointerdown(pe(60, 600, 2)); t.ok(input.getX() === 60 && input.isDown() && downs === 1 && actions === 2, 'touch in the rail steers 1:1 and is not an action');
+  L.pointermove(pe(200, 100, 2)); t.ok(input.getX() === 200, 'steering finger keeps steering after sliding up out of the rail');
+  L.pointerdown(pe(10, 50, 3)); t.ok(actions === 3 && input.getX() === 200, 'two-handed: 2nd finger taps the action zone while steering');
+  L.pointerup(pe(10, 50, 3)); t.ok(input.isDown(), 'lifting the action finger does not release steering');
+  L.pointerup(pe(200, 100, 2)); t.ok(!input.isDown() && ups === 1, 'lifting the steering finger releases');
+  L.pointermove(pe(100, 300, 1, 'mouse', 0)); t.ok(input.getX() === 200, 'hovering mouse above the rail does not steer');
+  L.pointermove(pe(100, 600, 1, 'mouse', 0)); t.ok(input.getX() === 100, 'hovering mouse inside the rail steers');
+  const a2 = []; const off = input.listen('action', () => a2.push(1)); input.act(); off(); input.act();
+  t.ok(a2.length === 1 && actions === 5, 'listen() subscribers + act() programmatic action; unsubscribe works');
+  const legacy = new AnchorInput({ container: mkEl(), document: doc, width: 360, height: 640 });
+  legacy.el.listeners.pointerdown(pe(90, 10)); t.ok(legacy.getX() === 90 && legacy.isDown(), 'steerFrac 0 (default) keeps whole-screen steering');
+}
+// ---- action wiring: action zone releases Catch / fires Laser; START tap is not an action
+{
+  const { input, game, loop, I } = mk({ levels: [['############', '############']] });
+  const b = I.balls[0]; t.ok(b.stuck, 'ball waits on the paddle');
+  input.act(); t.ok(!b.stuck && b.dy < 0, 'onAction launches the waiting ball');
+  I.spawnCapsule(I.paddle.x, I.paddle.top, 'L'); game.update(1 / 60); input.act();
+  t.ok(I.lasers.filter((l) => l.active).length === 2, 'onAction fires the laser pair');
+  const x0 = I.paddle.x; input.act(); game.update(1 / 60); t.ok(I.paddle.x === x0, 'action does not move the paddle');
+  loop.pause(); const before = I.lasers.filter((l) => l.active).length; input.act(); t.ok(I.lasers.filter((l) => l.active).length === before, 'actions are ignored outside PLAY');
+}
+
+// ---- anti-stall
+{
+  const { game, I } = mk({ levels: [['G...........']] }); const b = I.balls[0];
+  place(b, 180, 300, 0.99, 0.141);           // flat bounce: |dy| < STALL_VY
+  const dy0 = Math.abs(b.dy); let nudged = 0, tNudge = -1;
+  for (let f = 0; f < 60 * 4; f++) {
+    b.y = 300; b.x = 180;                    // pin it mid-air so only the monitor is under test
+    if (b.watch(1 / 60)) { nudged++; if (tNudge < 0) tNudge = f / 60; }
+  }
+  t.ok(nudged >= 1 && tNudge >= G.STALL_TIME - 0.05 && tNudge <= G.STALL_TIME + 0.1, `flat bounce nudged after ~${G.STALL_TIME}s (at ${tNudge.toFixed(2)}s)`);
+  t.ok(Math.abs(b.dy) > dy0 + 0.1 && near(Math.hypot(b.dx, b.dy), 1), 'nudge raises |vy| and keeps a unit direction');
+  place(b, 180, 300, 0, -1); let v = 0; for (let f = 0; f < 60 * 4; f++) { b.y = 300; if (b.watch(1 / 60)) v++; }
+  t.ok(v >= 1 && Math.abs(b.dx) > 0.2, 'a pure-vertical loop is broken too');
+  place(b, 180, 300, 0.7, 0.714); let n = 0; for (let f = 0; f < 60 * 10; f++) if (b.watch(1 / 60)) n++;
+  t.ok(n === 0, 'healthy angles are never touched');
+  // in-engine: a ball bouncing flat between the walls under the HUD gets freed
+  const g2 = mk({ levels: [['G...........']] }); const b2 = g2.I.balls[0]; place(b2, 100, G.HUD_H + 8, 0.99, -0.14); g2.game.update(1 / 60);
+  for (let f = 0; f < 60 * 5; f++) g2.game.update(1 / 60);
+  t.ok(g2.game.stats().stalls >= 1, 'engine counts anti-stall nudges (stats.stalls)');
+}
+
+// ---- VFX: particles + screen shake
+{
+  const { game, I } = mk({ levels: [['#S..........', '............']] });
+  const b = I.balls[0]; const [x, y] = cellCenter(0, 0);
+  place(b, x, y + G.BH / 2 + G.BALL_R - 1, 0, -1); game.update(1 / 300);
+  const n = I.fx.active; t.ok(n >= 5 && n <= 10, `standard brick destroyed -> burst of 5-10 particles (${n})`);
+  const col = I.fx.col[I.fx.life.findIndex((l) => l > 0)]; t.ok(col === '#e53935', 'particles match the brick colour (row 0 red)');
+  const [sx, sy] = cellCenter(0, 1); let before = I.fx.active;
+  for (let hit = 0; hit < 3; hit++) { place(b, sx, sy + G.BH / 2 + G.BALL_R - 1, 0, -1); game.update(1 / 300); if (hit < 2) t.ok(I.fx.active === before, `silver hit ${hit + 1}: no burst until destroyed`); }
+  t.ok(I.fx.active - before >= 5 && I.fx.active - before <= 10, 'silver destroyed -> burst');
+  I.fx.step(1); t.ok(I.fx.active === 0, 'particles fade out and free their slots');
+  const ctxStub = new Proxy({}, { get: (_, p) => (p === 'globalAlpha' ? 1 : () => {}), set: () => true });
+  game.draw(ctxStub); t.ok(true, 'draw() runs with particles + shake against a stub context');
+}
+{
+  const { input, game, I } = mk({ levels: [['G...........']] }); const b = I.balls[0];
+  t.ok(game.shake === 0, 'no shake at rest');
+  const [gx, gy] = cellCenter(0, 0); place(b, gx, gy + G.BH / 2 + G.BALL_R - 1, 0, -1); game.update(1 / 300);
+  t.ok(game.shake === 0, 'gold hit at base speed: no shake');
+  // push speed up via real brick breaks
+  const lvl = Array(8).fill('############'); const g3 = mk({ levels: [lvl.slice(0, 6).concat(['............', 'GGGGGGGGGGGG'])] }); const b3 = g3.I.balls[0];
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 12; c++) { const [x, y] = cellCenter(r, c); place(b3, x, y + G.BH / 2 + G.BALL_R - 1, 0, -1); g3.game.update(1 / 300); }
+  t.ok(g3.game.speedMult >= G.GOLD_SHAKE_MULT, `speed multiplier reached ${g3.game.speedMult.toFixed(2)}`);
+  const [hx, hy] = cellCenter(7, 4); place(b3, hx, hy - G.BH / 2 - G.BALL_R + 1, 0, 1); g3.game.update(1 / 300);
+  t.ok(g3.game.shake > 3, `gold hit at speed shakes the screen (${g3.game.shake.toFixed(1)}px)`);
+  const ctxStub = new Proxy({}, { get: (_, p) => (p === 'globalAlpha' ? 1 : () => {}), set: () => true });
+  g3.game.draw(ctxStub); g3.game.draw(ctxStub);
+  // life lost
+  const g4 = mk({ levels: [['G#..........']] }); const b4 = g4.I.balls[0]; place(b4, 330, G.H + 20, 0, 1); g4.game.update(1 / 60);
+  t.ok(g4.game.shake >= 9 && g4.game.observe().lives === 2, 'losing a life shakes the screen');
+}
+
 // ---- headless integration
 {
   const mkGame = (d) => G.createGame(d, { storage: null });
   // a human-ish player: follows the ball with aiming error (so it hits off-centre zones), taps to launch
-  const player = ({ obs, input, frame, rng }) => input.feed(obs.ball.x + (rng() - 0.5) * 40, frame % 12 === 0);
+  const player = ({ obs, input, frame, rng }) => { input.feed(obs.ball.x + (rng() - 0.5) * 40, true); if (obs.stuck && frame % 12 === 0) input.act(); };
   const r = runSim({ createGame: mkGame, bot: player, maxSeconds: 900, seed: 3 });
   t.ok(r.stats.level >= 2 && r.stats.destroyed > 40, `bot clears level 1 and progresses (${r.outcome}, level ${r.stats.level}, destroyed ${r.stats.destroyed}, score ${r.stats.score})`);
-  const avoider = ({ obs, input, frame }) => input.feed(obs.stuck ? 180 : (obs.ball.x > 180 ? 20 : 340), frame % 12 === 0);
+  const avoider = ({ obs, input, frame }) => { input.feed(obs.stuck ? 180 : (obs.ball.x > 180 ? 20 : 340), true); if (obs.stuck && frame % 12 === 0) input.act(); };
   const lose = runSim({ createGame: mkGame, bot: avoider, maxSeconds: 300, seed: 3 });
   t.ok(lose.outcome === 'lose' && lose.state === State.GAMEOVER && lose.stats.lives === 0, 'a paddle that dodges the ball loses all 3 lives -> GAMEOVER');
 }
