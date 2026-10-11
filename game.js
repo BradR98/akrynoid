@@ -20,6 +20,8 @@ import { AnchorLoop, State } from './lib/anchor-loop.js';
 import { AnchorInput } from './lib/anchor-input.js';
 import { generateLevel, CAMPAIGN_LEVELS } from './levels.js';
 import { loadBoard, saveBoard, qualifies, insertScore, cleanName, LB_SIZE, NAME_LEN } from './leaderboard.js';
+import { createAudio } from './audio.js';
+import { createControls } from './controls.js';
 export { generateLevel, CAMPAIGN_LEVELS };
 
 /* ----------------------------------------------------------------------------------------------- constants */
@@ -652,12 +654,14 @@ export function mount(stage, canvas) {
   }
   addEventListener('resize', resize); resize();
 
-  let game = null, loop = null, advanceTimer = 0;
+  let game = null, loop = null, advanceTimer = 0, controls = null;
+  const audio = createAudio();
   const input = new AnchorInput({
     container: stage, width: W, height: H, steerFrac: STEER_FRAC, relative: true, label: 'STEERING RAIL  -  drag to move  |  tap to launch / fire',
     on: { onDown: uiTap },                        // a touch on the rail also drives the menu screens (START / PAUSE / GAMEOVER)
   });
   function uiTap() {
+    audio.resume();
     if (loop.state === State.START) loop.start();
     else if (loop.state === State.PAUSE) loop.resume();
     else if (loop.state === State.GAMEOVER && game.canRestart()) { game.restart(); loop.reset(); loop.start(); }
@@ -665,14 +669,17 @@ export function mount(stage, canvas) {
   loop = new AnchorLoop({
     update: (dt) => game.update(dt),                       // update(delta) hook
     draw: () => game.draw(ctx),                            // draw(ctx) hook
+    onState: () => { if (controls) controls.sync(); }
   });
+  controls = createControls({ stage, loop, audio, W, H });
   game = createGame({ input, loop }, {
     onLevelClear: (g) => {                                 // hold the "ROUND CLEAR" screen briefly, then continue
       clearTimeout(advanceTimer);
       advanceTimer = setTimeout(() => { g.nextLevel(); loop.start(); }, 1500);
     },
+    onEvent: (name) => audio.playEvent(name),
   });
   addEventListener('keydown', (e) => { if (game.entryKey(e.key)) e.preventDefault(); });   // desktop typing on the initials screen
   loop.boot();
-  return { game, loop, input };
+  return { game, loop, input, audio, controls };
 }

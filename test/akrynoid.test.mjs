@@ -2,6 +2,7 @@ import { AnchorLoop, State } from '../lib/anchor-loop.js';
 import { AnchorInput } from '../lib/anchor-input.js';
 import { runSim, bots, mulberry32, createTester } from '../lib/anchor-headless.js';
 import * as G from '../game.js';
+import { createAudio } from '../audio.js';
 
 const t = createTester();
 const near = (a, b, e = 1e-6) => Math.abs(a - b) < e;
@@ -347,6 +348,32 @@ const cellCenter = (r, c) => [(c + 0.5) * G.BW, G.GRID_TOP + (r + 0.5) * G.BH];
   const avoider = ({ obs, input, frame }) => { input.feed(obs.stuck ? 180 : (obs.ball.x > 180 ? 20 : 340), true); if (obs.stuck && frame % 12 === 0) input.act(); };
   const lose = runSim({ createGame: mkGame, bot: avoider, maxSeconds: 300, seed: 3 });
   t.ok(lose.outcome === 'lose' && lose.state === State.GAMEOVER && lose.stats.lives === 0, 'a paddle that dodges the ball loses all 3 lives -> GAMEOVER');
+}
+
+// ---- audio + pause
+{
+  const audio = createAudio();
+  t.ok(!audio.supported || typeof audio.supported === 'boolean', 'createAudio is safe headlessly');
+  let threw = false;
+  try {
+    audio.setEnabled(true);
+    audio.playEvent('brick');
+    audio.play('bounce');
+    audio.toggle();
+    audio.suspend();
+    audio.resume();
+  } catch(e) { threw = true; }
+  t.ok(!threw, 'audio methods do not throw in headless mode');
+
+  const { input, game, loop, I } = mk();
+  loop.start();
+  t.ok(loop.state === State.PLAY, 'starts in PLAY');
+  loop.pause();
+  t.ok(loop.state === State.PAUSE, 'transitions to PAUSE');
+  loop.resume();
+  t.ok(loop.state === State.PLAY, 'resumes to PLAY');
+  loop.togglePause();
+  t.ok(loop.state === State.PAUSE, 'toggles to PAUSE');
 }
 
 process.exit(t.summary());
