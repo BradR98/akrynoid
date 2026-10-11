@@ -1,5 +1,22 @@
 # Changelog
 
+## Phase 6
+- Procedural 100-level campaign (`levels.js`), replacing the three hand-written levels; `validateLevel` + tests over all 100.
+- Top-10 leaderboard with 3-character names (`leaderboard.js`), new `NAME_ENTRY` loop state, on-canvas initials wheel on the steering rail (+ keyboard on desktop), leaderboard on the game-over screen, round counter in the HUD.
+- `AnchorLoop`: `NAME_ENTRY` state (`GAMEOVER -> NAME_ENTRY -> GAMEOVER`); headless runner treats it as an ended run.
+- `sw.js`: cache `akrynoid-v6`, precaches `levels.js` and `leaderboard.js` (new test checks every module `game.js` imports is precached).
+- `tools/gauntlet.mjs` bot gauntlet.
+
+### Measured: 100-level gauntlet (40 seeded runs per bot, 3 lives for the whole campaign)
+| Bot | Wins | Level reached (median / min / max) |
+|---|---|---|
+| tracker (aim noise 20, unlimited speed) | 40/40 (100%) | 100 / 100 / 100 |
+| fast thumb (noise 26, 600 px/s) | 0/40 | 52 / 17 / 97 |
+| average thumb (noise 30, 420 px/s) | 0/40 | 14 / 5 / 29 |
+| slow thumb (noise 34, 300 px/s) | 0/40 | 2 / 1 / 4 |
+
+The campaign is completable (every level is clearable: the tracker never times out and needs Mercy Aim ~2.7x per level). The bots with limited speed are crude models of a thumb (they chase the ball's current x, never its landing point), so treat their numbers as a relative difficulty curve, not a prediction. Perfect play takes ~6 hours of game time (about 3.6 min per level on average).
+
 ## Phase 5
 - Replaced the split-screen scheme (top-80% action zone, absolute steering) with one-handed controls on the bottom rail.
 - `AnchorInput`: `relative: true` delta steering (no teleport on touch; anchor re-bases at edges and on `setBounds`), tap detection (`tapMs` 200 / `tapPx` 10) firing `onAction`; presses outside the rail are ignored. Legacy absolute / whole-screen mode unchanged.

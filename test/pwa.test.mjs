@@ -48,6 +48,9 @@ const run = async (type, ev) => { let p; listeners[type]({ ...ev, waitUntil: (x)
 const lib = readdirSync(join(root, 'lib')).filter((f) => f.endsWith('.js'));
 const listed = [...swSrc.matchAll(/'([^']+\.(?:js|json|png|html))'/g)].map((x) => x[1]);
 for (const f of ['index.html', 'game.js', 'manifest.json', ...m.icons.map((i) => i.src), 'icons/icon-180.png']) t.ok(listed.includes(f), `sw precache lists ${f}`);
+const imported = [...read('game.js').matchAll(/from '\.\/([^']+\.js)'/g)].map((x) => x[1]).filter((f) => !f.startsWith('lib/'));
+t.ok(imported.includes('levels.js') && imported.includes('leaderboard.js') && imported.every((f) => listed.includes(f)), `sw precache lists every local module game.js imports (${imported.join(', ')})`);
+t.ok(/const CACHE = 'akrynoid-v6'/.test(swSrc), 'cache version bumped to v6');
 t.ok(lib.length >= 3 && lib.every((f) => listed.includes('lib/' + f)), `sw precache lists every file in lib/ (${lib.join(', ')})`);
 t.ok(listed.every((f) => existsSync(join(root, f))), 'every precached path exists on disk');
 

@@ -18,6 +18,9 @@
  */
 import { AnchorLoop, State } from './lib/anchor-loop.js';
 import { AnchorInput } from './lib/anchor-input.js';
+import { generateLevel, CAMPAIGN_LEVELS } from './levels.js';
+import { loadBoard, saveBoard, qualifies, insertScore, cleanName, LB_SIZE, NAME_LEN } from './leaderboard.js';
+export { generateLevel, CAMPAIGN_LEVELS };
 
 /* ----------------------------------------------------------------------------------------------- constants */
 export const W = 360, H = 640;                       // logical board (portrait 9:16)
@@ -49,15 +52,9 @@ const SILVER_SHADES = ['', '#7d8696', '#aeb6c4', '#e8ecf3'];   // indexed by rem
 const CAP_TYPES = ['E', 'C', 'L', 'D'];
 const CAP_COLORS = { E: '#1e88e5', C: '#43a047', L: '#e53935', D: '#00acc1' };
 
-/**
- * Level grid legend (12 chars per row):  '.' empty   '#' Standard (1 HP, coloured by row)
- *                                        'S' Silver (3 HP)   'G' Gold (indestructible)
- */
-export const LEVELS = [
-  ['SSSSSSSSSSSS', '############', '############', '############', '############', '############'],
-  ['G..........G', '.SSSSSSSSSS.', '############', '#G########G#', '############', '.##########.', '..########..'],
-  ['.....##.....', '....####....', '...######...', '..SSSSSSSS..', '.##########.', 'G##########G', '.##G####G##.'],
-];
+/** Name-entry wheel: 26 letters + DEL + END; one symbol per ENTRY_STEP logical px of finger travel; ignore input briefly after game over. */
+const ENTRY_SYMS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').concat(['DEL', 'END']);
+const ENTRY_STEP = 14, ENTRY_GRACE = 700, RESTART_GUARD = 600;
 
 /** Angle off vertical for a hit at `rel` (0 = paddle left edge, 1 = right edge). Exported for tests. */
 export function reflectAngle(rel) {
@@ -185,19 +182,24 @@ class Bricks {
 /**
  * @param {{input:AnchorInput, rng?:()=>number, loop:AnchorLoop}} deps
  * @param {object} [opts]
- * @param {string[][]} [opts.levels]           level list (default LEVELS)
+ * @param {string[][]} [opts.levels]           explicit level list (tests); default is the procedural 100-level campaign
+ * @param {(i:number)=>string[]} [opts.levelFn] custom generator (default generateLevel) and {number} [opts.levelCount] its length (default 100)
+ * @param {()=>number} [opts.now]               injectable wall clock in ms (VFX, entry grace, restart guard); default performance.now
+ * @param {boolean} [opts.nameEntry=true]      false skips the NAME_ENTRY state / leaderboard writes (headless bots)
  * @param {(game:object)=>void} [opts.onLevelClear]  called right after loop enters LEVEL_CLEAR. It must eventually call
  *        game.nextLevel() then loop.start(). Default: advance immediately (headless / bots).
  * @param {(name:string, data?:any)=>void} [opts.onEvent]  'paddle','wall','brick','hard','gold','pickup','laser','life','levelclear','gameover'
- * @param {{getItem:Function,setItem:Function}|null} [opts.storage]  high-score persistence (default localStorage, if any)
+ * @param {{getItem:Function,setItem:Function}|null} [opts.storage]  leaderboard persistence (default localStorage, if any)
  */
 export function createGame({ input, rng = Math.random, loop }, opts = {}) {
-  const levels = opts.levels || LEVELS;
+  const levelCount = opts.levels ? opts.levels.length : (opts.levelCount || CAMPAIGN_LEVELS);
+  const getLevel = (i) => (opts.levels ? opts.levels[i] : (opts.levelFn || generateLevel)(i));
+  const nameEntryOn = opts.nameEntry !== false;
   const emit = opts.onEvent || (() => {});
   const onLevelClear = opts.onLevelClear || ((g) => { g.nextLevel(); loop.start(); });
   let storage = null;
   try { storage = 'storage' in opts ? opts.storage : (typeof localStorage !== 'undefined' ? localStorage : null); } catch (_) { storage = null; }
-  const HS_KEY = 'akrynoid.highscore';
+  const LEGACY_HS_KEY = 'akrynoid.highscore';        // pre-leaderboard single high score, still honoured for the HUD
 
   const paddle = new Paddle(), bricks = new Bricks();
   const balls = Array.from({ length: MAX_BALLS }, () => new Ball());
@@ -209,12 +211,19 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   let idleT = 0, mercyAt = 0, mercyArmed = false;       // Mercy Aim state (idleT = s since a brick was last damaged)
   let shake = 0, lastDraw = 0;
   const fx = new Particles();
-  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const now = opts.now || (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   const kick = (mag) => { if (mag > shake) shake = mag; };
   let scoreStr = '000000', highStr = '000000';
   const pad6 = (n) => String(n).padStart(6, '0');
-  try { high = storage ? (parseInt(storage.getItem(HS_KEY), 10) || 0) : 0; } catch (_) { high = 0; }
+  let board = loadBoard(storage), lastRank = -1, overAt = 0, roundStr = 'RD 1';
+  let entryName = '', entryX = 0, entryT0 = 0, pressOk = false, lbLines = [];
+  try { high = Math.max(board.length ? board[0].score : 0, storage ? (parseInt(storage.getItem(LEGACY_HS_KEY), 10) || 0) : 0); } catch (_) { high = board.length ? board[0].score : 0; }
   highStr = pad6(high);
+  /** Pre-format the table once (draw() must not build strings every frame). */
+  function buildLines() {
+    lbLines = board.map((e, i) => (String(i + 1).padStart(2, ' ') + '. ' + e.name + '  ' + String(e.score).padStart(6, '0') + '  RD' + String(e.level).padStart(3, '0')));
+  }
+  buildLines();
 
   // scratch for brick collision (no per-frame allocation)
   let hitNx = 0, hitNy = 0;
@@ -232,7 +241,6 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
     mercies++; resetMercy(); emit('mercy');
   }
   function addScore(n) { score += n; scoreStr = pad6(score); if (score > high) { high = score; highStr = scoreStr; } }
-  function saveHigh() { try { if (storage && score >= high && score > 0) storage.setItem(HS_KEY, String(high)); } catch (_) {} }
   function acquireBall() { for (let i = 0; i < MAX_BALLS; i++) if (!balls[i].active) return balls[i]; return null; }
   function firstBall() { for (let i = 0; i < MAX_BALLS; i++) if (balls[i].active) return balls[i]; return null; }
   function anyStuck() { for (let i = 0; i < MAX_BALLS; i++) if (balls[i].active && balls[i].stuck) return true; return false; }
@@ -380,12 +388,78 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
 
   /* ---- game flow ---- */
   function loadLevel() {
-    bricks.load(levels[level]); clearPools(); resetPowerups(); speedMult = 1; laserCd = 0; resetMercy(); serve();
+    bricks.load(getLevel(level)); roundStr = 'RD ' + (level + 1); clearPools(); resetPowerups(); speedMult = 1; laserCd = 0; resetMercy(); serve();
   }
   function loseLife() {
     lives--; minLives = Math.min(minLives, lives); emit('life', lives);
     clearPools(); resetPowerups(); speedMult = 1; kick(9); resetMercy();                                // velocity reset + shake
-    if (lives > 0) serve(); else { saveHigh(); emit('gameover'); loop.gameOver(); }
+    if (lives > 0) serve(); else endRun();
+  }
+  /** Run over (0 lives, or last level cleared): GAMEOVER, then NAME_ENTRY if the score makes the Top 10. */
+  function endRun() {
+    overAt = now(); lastRank = -1;
+    emit('gameover'); loop.gameOver();
+    if (nameEntryOn && qualifies(board, score)) beginEntry();
+  }
+  function wheelIdx() { return (((Math.round(entryX / ENTRY_STEP) % ENTRY_SYMS.length) + ENTRY_SYMS.length) % ENTRY_SYMS.length); }
+  /** Jump the wheel to symbol index i (nearest forward position) by repositioning the input. */
+  function setWheel(i) {
+    const n = ENTRY_SYMS.length, d = (((i - wheelIdx()) % n) + n) % n;
+    entryX = Math.round(entryX / ENTRY_STEP) * ENTRY_STEP + d * ENTRY_STEP; input.feed(entryX, input.isDown());
+  }
+  function beginEntry() {
+    entryName = ''; entryT0 = now(); pressOk = false;
+    input.setBounds(-1e6, 1e6);                                      // the wheel scrolls forever; relative drags only use deltas
+    input.feed(0, input.isDown()); entryX = input.getX();            // wheel starts on 'A'
+    emit('nameentry'); loop.nameEntry();
+  }
+  function entrySubmit() {
+    if (!entryName.length) return;
+    const res = insertScore(board, { name: cleanName(entryName), score, level: level + 1 });
+    board = res.board; lastRank = res.rank; saveBoard(storage, board); buildLines();
+    if (board.length) { high = Math.max(high, board[0].score); highStr = pad6(high); }
+    overAt = now(); emit('highscore', res.rank); loop.finishEntry();
+  }
+  function entryPick() {
+    const sym = ENTRY_SYMS[wheelIdx()];
+    if (sym === 'END') entrySubmit();
+    else if (sym === 'DEL') entryName = entryName.slice(0, -1);
+    else if (entryName.length < NAME_LEN) { entryName += sym; if (entryName.length === NAME_LEN) setWheel(ENTRY_SYMS.length - 1); }   // 3rd letter: wheel jumps to END
+  }
+
+  /** Top-10 table (pre-formatted lines); the row just earned blinks. */
+  function drawBoard(ctx, y0) {
+    ctx.font = 'bold 15px "Courier New", monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#ff3b3b'; ctx.fillText('- TOP 10 -', W / 2, y0);
+    if (!lbLines.length) { ctx.fillStyle = '#6f7aa8'; ctx.fillText('NO SCORES YET', W / 2, y0 + 40); return; }
+    for (let i = 0; i < lbLines.length; i++) {
+      const hot = i === lastRank;
+      ctx.fillStyle = hot ? ((now() / 250 | 0) % 2 ? '#fff' : '#fdd835') : (i === 0 ? '#fdd835' : '#cfd8ff');
+      ctx.fillText(lbLines[i], W / 2, y0 + 28 + i * 24);
+    }
+  }
+  /** Arcade initials screen: three slots + a scroll wheel (drag on the rail to scroll, tap to pick). */
+  function drawEntry(ctx) {
+    ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(0, HUD_H, W, H - HUD_H);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fdd835'; ctx.font = 'bold 26px "Courier New", monospace'; ctx.fillText('NEW HIGH SCORE', W / 2, 120);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 22px "Courier New", monospace'; ctx.fillText(scoreStr, W / 2, 158);
+    ctx.fillStyle = '#9aa5ff'; ctx.font = 'bold 13px "Courier New", monospace'; ctx.fillText('ENTER YOUR INITIALS', W / 2, 200);
+    const sym = ENTRY_SYMS[wheelIdx()], blink = (now() / 350 | 0) % 2 === 0;
+    for (let k = 0; k < NAME_LEN; k++) {
+      const x = W / 2 + (k - 1) * 56, ch = k < entryName.length ? entryName[k] : (k === entryName.length && sym.length === 1 && blink ? sym : '');
+      ctx.fillStyle = k < entryName.length ? '#fff' : '#fdd835'; ctx.font = 'bold 44px "Courier New", monospace'; ctx.fillText(ch, x, 250);
+      ctx.fillRect(x - 20, 280, 40, 4);
+    }
+    const idx = wheelIdx(), n = ENTRY_SYMS.length;                                             // the wheel: 5 symbols, centre one lit
+    for (let o = -3; o <= 3; o++) {
+      const t = ENTRY_SYMS[(((idx + o) % n) + n) % n], c = o === 0;
+      ctx.globalAlpha = c ? 1 : 0.55 - Math.abs(o) * 0.1; ctx.fillStyle = c ? '#fdd835' : '#9aa5ff';
+      ctx.font = (c ? 'bold 34px' : 'bold 20px') + ' "Courier New", monospace'; ctx.fillText(t, W / 2 + o * 50, 360);
+    }
+    ctx.globalAlpha = 1; ctx.strokeStyle = '#fdd835'; ctx.strokeRect(W / 2 - 30, 334, 60, 52);
+    ctx.fillStyle = '#6f7aa8'; ctx.font = 'bold 12px "Courier New", monospace';
+    ctx.fillText('DRAG ON THE RAIL TO SCROLL', W / 2, 410); ctx.fillText('TAP TO PICK  -  DEL / END', W / 2, 430);
   }
 
   const game = {
@@ -402,8 +476,8 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
       updateLasers(dt); updateCapsules(dt);
 
       if (bricks.remaining <= 0) {                                                       // win condition
-        saveHigh(); emit('levelclear', level + 1);
-        if (level + 1 >= levels.length) { won = true; emit('gameover'); loop.gameOver(); }
+        emit('levelclear', level + 1);
+        if (level + 1 >= levelCount) { won = true; endRun(); }
         else { loop.levelClear(); onLevelClear(game); }
         return;
       }
@@ -411,12 +485,24 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
     },
 
     /** Move to the next level (call while in LEVEL_CLEAR, then loop.start()). */
-    nextLevel() { level = Math.min(level + 1, levels.length - 1); loadLevel(); },
+    nextLevel() { level = Math.min(level + 1, levelCount - 1); loadLevel(); },
     /** Fresh run (call from GAMEOVER, then loop.reset(); loop.start()). */
     restart() {
       level = 0; lives = START_LIVES; minLives = START_LIVES; score = 0; scoreStr = pad6(0); destroyed = 0; won = false;
       loadLevel(); stalls = 0; mercies = 0;
     },
+
+    /** Desktop keyboard for NAME_ENTRY: letters / digits type, Backspace deletes, Enter saves. Returns true if consumed. */
+    entryKey(key) {
+      if (loop.state !== State.NAME_ENTRY || now() - entryT0 < ENTRY_GRACE) return false;
+      if (key === 'Backspace') entryName = entryName.slice(0, -1);
+      else if (key === 'Enter') entrySubmit();
+      else if (/^[a-zA-Z0-9]$/.test(key) && entryName.length < NAME_LEN) entryName += key.toUpperCase();
+      else return false;
+      return true;
+    },
+    /** True once the GAMEOVER / leaderboard screen has been up long enough that a tap should restart (avoids skipping it by accident). */
+    canRestart() { return now() - overAt > RESTART_GUARD; },
 
     /** Render the whole frame to the main canvas (logical 360x640 coordinates). */
     draw(ctx) {
@@ -475,6 +561,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
       ctx.fillStyle = '#fff'; ctx.font = 'bold 15px "Courier New", monospace'; ctx.fillText(scoreStr, 10, 19);
       ctx.textAlign = 'center'; ctx.font = 'bold 11px "Courier New", monospace'; ctx.fillStyle = '#ff3b3b'; ctx.fillText('HIGH SCORE', W / 2, 5);
       ctx.fillStyle = '#fff'; ctx.font = 'bold 15px "Courier New", monospace'; ctx.fillText(highStr, W / 2, 19);
+      ctx.textAlign = 'right'; ctx.font = 'bold 10px "Courier New", monospace'; ctx.fillStyle = '#9aa5ff'; ctx.fillText(roundStr, W - 10, 27);
       for (let l = 0; l < lives && l < 8; l++) {                                         // remaining lives as mini Vaus icons
         const lx = W - 12 - (l + 1) * 24 + 24;
         ctx.fillStyle = '#9aa5ff'; ctx.fillRect(lx - 22, 14, 20, 7);
@@ -487,14 +574,21 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
       if (st === State.PLAY && anyStuck()) {
         ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = 'bold 13px "Courier New", monospace';
         ctx.fillText(level === 0 && destroyed === 0 ? 'ROUND 1 - TAP TO LAUNCH' : 'TAP TO LAUNCH', W / 2, 420);
+      } else if (st === State.NAME_ENTRY) {
+        drawEntry(ctx);
       } else if (st !== State.PLAY) {
         ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, HUD_H, W, H - HUD_H);
+        const over = st === State.GAMEOVER;
         ctx.fillStyle = '#fff'; ctx.font = 'bold 30px "Courier New", monospace';
         const title = st === State.START ? 'AKRYNOID' : st === State.PAUSE ? 'PAUSED' : st === State.LEVEL_CLEAR ? 'ROUND CLEAR' : (won ? 'YOU WIN' : 'GAME OVER');
-        ctx.fillText(title, W / 2, 270);
+        ctx.fillText(title, W / 2, over ? 90 : 270);
         ctx.font = 'bold 14px "Courier New", monospace'; ctx.fillStyle = '#9aa5ff';
         const sub = st === State.START ? 'TAP TO START' : st === State.PAUSE ? 'TAP TO RESUME' : st === State.LEVEL_CLEAR ? 'GET READY...' : 'TAP TO RETRY';
-        ctx.fillText(sub, W / 2, 310);
+        if (over) {
+          ctx.fillText(scoreStr + '  -  ' + roundStr, W / 2, 124);
+          drawBoard(ctx, 160);
+          ctx.fillStyle = '#9aa5ff'; ctx.font = 'bold 14px "Courier New", monospace'; ctx.fillText(sub, W / 2, 470);
+        } else ctx.fillText(sub, W / 2, 310);
       }
       ctx.restore();
     },
@@ -513,6 +607,10 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
     get flags() { return { catchOn, laserOn, expanded: paddle.targetW > PADDLE_W }; },
     /** Direct access to the pooled entities (tests / debug tooling). */
     get shake() { return shake; },
+    get leaderboard() { return board.map((e) => ({ ...e })); },
+    get lastRank() { return lastRank; },
+    get entry() { return { name: entryName, symbol: ENTRY_SYMS[wheelIdx()], x: entryX }; },
+    get levelCount() { return levelCount; },
     get mercy() { return { idle: idleT, armed: mercyArmed, at: mercyAt }; },
     internals: { paddle, bricks, balls, caps, lasers, fx, spawnCapsule, applyCapsule, kick },
   };
@@ -521,8 +619,10 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   // A tap whose touch-DOWN happened outside PLAY (START / PAUSE / GAMEOVER taps that merely start the game) is not also an
   // in-game action, so we remember the state at touch-down. (Listeners run before the UI's own onDown handler.)
   let pressInPlay = true;
-  input.listen('down', () => { pressInPlay = loop.state === State.PLAY; });
+  input.listen('down', () => { pressInPlay = loop.state === State.PLAY; pressOk = now() - entryT0 > ENTRY_GRACE; });
+  input.listen('move', () => { if (loop.state === State.NAME_ENTRY && pressOk) entryX = input.getX(); });   // scroll the initials wheel
   input.listen('action', () => {
+    if (loop.state === State.NAME_ENTRY) { if (pressOk) entryPick(); return; }
     if (loop.state !== State.PLAY || !pressInPlay) return;
     if (anyStuck()) releaseStuck(); else if (laserOn) fireLasers();
   });
@@ -555,7 +655,7 @@ export function mount(stage, canvas) {
   function uiTap() {
     if (loop.state === State.START) loop.start();
     else if (loop.state === State.PAUSE) loop.resume();
-    else if (loop.state === State.GAMEOVER) { game.restart(); loop.reset(); loop.start(); }
+    else if (loop.state === State.GAMEOVER && game.canRestart()) { game.restart(); loop.reset(); loop.start(); }
   }
   loop = new AnchorLoop({
     update: (dt) => game.update(dt),                       // update(delta) hook
@@ -567,6 +667,7 @@ export function mount(stage, canvas) {
       advanceTimer = setTimeout(() => { g.nextLevel(); loop.start(); }, 1500);
     },
   });
+  addEventListener('keydown', (e) => { if (game.entryKey(e.key)) e.preventDefault(); });   // desktop typing on the initials screen
   loop.boot();
   return { game, loop, input };
 }

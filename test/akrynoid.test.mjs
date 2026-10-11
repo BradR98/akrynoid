@@ -8,7 +8,7 @@ const near = (a, b, e = 1e-6) => Math.abs(a - b) < e;
 const mk = (opts = {}, rngFn = mulberry32(5)) => {
   const input = new AnchorInput({ width: G.W, height: G.H });
   const loop = new AnchorLoop({ update: (d) => game.update(d), draw: () => {}, raf: null, caf: () => {}, now: () => 0, autoPause: false, maxDt: Infinity });
-  const game = G.createGame({ input, rng: rngFn, loop }, { storage: null, ...opts });
+  const game = G.createGame({ input, rng: rngFn, loop }, { storage: null, nameEntry: false, ...opts });
   loop.start();
   return { input, loop, game, I: game.internals };
 };
@@ -339,7 +339,7 @@ const cellCenter = (r, c) => [(c + 0.5) * G.BW, G.GRID_TOP + (r + 0.5) * G.BH];
 
 // ---- headless integration
 {
-  const mkGame = (d) => G.createGame(d, { storage: null });
+  const mkGame = (d) => G.createGame(d, { storage: null, nameEntry: false });
   // a human-ish player: follows the ball with aiming error (so it hits off-centre zones), taps to launch
   const player = ({ obs, input, frame, rng }) => { input.feed(obs.ball.x + (rng() - 0.5) * 40, true); if (obs.stuck && frame % 12 === 0) input.act(); };
   const r = runSim({ createGame: mkGame, bot: player, maxSeconds: 900, seed: 3 });
