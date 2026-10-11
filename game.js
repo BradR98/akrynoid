@@ -5,8 +5,8 @@
  *                                                    (update / observe / outcome / stats) plus draw(ctx).
  *   mount(stageEl, canvasEl)                         browser wiring: canvas scaling, AnchorInput, AnchorLoop.
  *
- * Phase 3 adds: split-screen input (rail steers, action zone fires/releases via input 'action'), an anti-stall monitor on
- * every ball, screen shake and a pooled particle emitter.
+ * Phase 3 added an anti-stall monitor, screen shake and a pooled particle emitter; Phase 4 the Mercy Aim; Phase 5 one-handed
+ * input: relative steering on the bottom rail, and a short rail tap ('action') launches a caught ball / fires lasers.
  *
  * Design notes
  *  - Paddle X is bound strictly to `input.getX()` (the input's clamp range is narrowed to keep the paddle on-screen).
@@ -29,7 +29,7 @@ export const BALL_R = 5, BASE_SPEED = 280, SPEED_STEP = 1.02, MAX_SPEED_MULT = 1
 export const START_LIVES = 3, DROP_CHANCE = 0.10;
 export const CAP_W = 30, CAP_H = 14, CAP_SPEED = 110, MAX_CAPSULES = 10;
 export const LASER_SPEED = 520, LASER_COOLDOWN = 0.14, MAX_LASERS = 12;
-export const STEER_FRAC = 0.2;                      // bottom 20% of the screen is the steering rail; the rest is the action zone
+export const STEER_FRAC = 0.2;                      // only the bottom 20% of the screen is the steering rail; the rest ignores input
 export const STALL_TIME = 3, STALL_VY = 0.3, STALL_VX = 0.05, STALL_NUDGE = 0.3;   // anti-stall (direction components, unit vector)
 export const GOLD_SHAKE_MULT = 1.2;                  // ball speed multiplier from which a Gold hit shakes the screen
 export const MERCY_MIN = 12, MERCY_MAX = 15;       // Mercy Aim: seconds without brick damage before the next bounce is nudged
@@ -517,10 +517,13 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
     internals: { paddle, bricks, balls, caps, lasers, fx, spawnCapsule, applyCapsule, kick },
   };
 
-  // Action zone (top 80%): launch caught balls, else fire lasers. Never touches paddle X. Registered before any UI handler
-  // so a tap that merely starts / resumes the game (non-PLAY state) is not also treated as an in-game action.
+  // Rail tap (a short, still touch on the steering rail): launch caught balls, else fire lasers.
+  // A tap whose touch-DOWN happened outside PLAY (START / PAUSE / GAMEOVER taps that merely start the game) is not also an
+  // in-game action, so we remember the state at touch-down. (Listeners run before the UI's own onDown handler.)
+  let pressInPlay = true;
+  input.listen('down', () => { pressInPlay = loop.state === State.PLAY; });
   input.listen('action', () => {
-    if (loop.state !== State.PLAY) return;
+    if (loop.state !== State.PLAY || !pressInPlay) return;
     if (anyStuck()) releaseStuck(); else if (laserOn) fireLasers();
   });
 
@@ -546,8 +549,8 @@ export function mount(stage, canvas) {
 
   let game = null, loop = null, advanceTimer = 0;
   const input = new AnchorInput({
-    container: stage, width: W, height: H, steerFrac: STEER_FRAC, label: 'STEERING RAIL  -  slide to move  |  tap above to launch / fire',
-    on: { onDown: uiTap, onAction: uiTap },       // any touch drives the menu screens (START / PAUSE / GAMEOVER)
+    container: stage, width: W, height: H, steerFrac: STEER_FRAC, relative: true, label: 'STEERING RAIL  -  drag to move  |  tap to launch / fire',
+    on: { onDown: uiTap },                        // a touch on the rail also drives the menu screens (START / PAUSE / GAMEOVER)
   });
   function uiTap() {
     if (loop.state === State.START) loop.start();

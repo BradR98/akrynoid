@@ -1,5 +1,12 @@
 # Changelog
 
+## Phase 5
+- Replaced the split-screen scheme (top-80% action zone, absolute steering) with one-handed controls on the bottom rail.
+- `AnchorInput`: `relative: true` delta steering (no teleport on touch; anchor re-bases at edges and on `setBounds`), tap detection (`tapMs` 200 / `tapPx` 10) firing `onAction`; presses outside the rail are ignored. Legacy absolute / whole-screen mode unchanged.
+- Game: rail tap launches a caught ball / fires lasers; a tap that only starts / resumes / restarts the game is not also an in-game action.
+- `sw.js` cache bumped `akrynoid-v4` -> `akrynoid-v5` so returning devices download the new controls.
+- Tests: new relative-steering, tap-threshold and START-tap cases (106 game checks). Bots unchanged (they drive `feed()` / `act()`): 100/100 wins at 1200 s, same as Phase 4.
+
 ## Phase 4
 - Mercy Aim (anti-stall v2): 12-15 s without brick damage -> next paddle/wall bounce nudged by a random +-3..5 deg.
 - PWA: `manifest.json`, generated icons (180/192/512), cache-first `sw.js`, meta tags + SW registration in `index.html`.

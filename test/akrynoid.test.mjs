@@ -12,7 +12,7 @@ const mk = (opts = {}, rngFn = mulberry32(5)) => {
   loop.start();
   return { input, loop, game, I: game.internals };
 };
-const tap = (input) => input.act();            // a tap in the action zone
+const tap = (input) => input.act();            // a tap on the rail
 const place = (b, x, y, dx, dy) => { b.active = true; b.stuck = false; b.x = x; b.y = y; b.dx = dx; b.dy = dy; };
 const cellCenter = (r, c) => [(c + 0.5) * G.BW, G.GRID_TOP + (r + 0.5) * G.BH];
 
@@ -168,32 +168,82 @@ const cellCenter = (r, c) => [(c + 0.5) * G.BW, G.GRID_TOP + (r + 0.5) * G.BH];
   t.ok(I.bricks.remaining === 1, 'gold does not block level clear');
 }
 
-// ---- input segregation (fake DOM): rail steers, action zone only fires onAction
+// ---- Phase 5 input (fake DOM): bottom rail only, relative steering (no teleport), rail taps
 {
+  let clock = 0, actions = 0, downs = 0, ups = 0;
   const mkEl = () => { const o = { style: {}, children: [], attrs: {}, listeners: {}, parentNode: null,
     appendChild(c) { c.parentNode = o; o.children.push(c); }, removeChild() {}, addEventListener(t, f) { o.listeners[t] = f; },
     removeEventListener() {}, setAttribute() {}, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 360, height: 640 }) }; return o; };
-  const doc = { createElement: mkEl }; let actions = 0, downs = 0, ups = 0;
-  const input = new AnchorInput({ container: mkEl(), document: doc, width: 360, height: 640, steerFrac: 0.2, on: { onAction: () => actions++, onDown: () => downs++, onUp: () => ups++ } });
-  const pe = (x, y, id = 1, type = 'touch', buttons = 1) => ({ clientX: x, clientY: y, pointerId: id, pointerType: type, buttons, preventDefault() {} });
-  const L = input.el.listeners;
-  t.ok(input.railTop === 512 && input.strip.style.height === '20%', 'rail = bottom 20% (y >= 512 of 640); strip drawn 20% tall');
-  L.pointerdown(pe(300, 100)); t.ok(actions === 1 && input.getX() === 180 && !input.isDown(), 'tap in action zone fires onAction, does NOT move X or start steering');
-  L.pointermove(pe(40, 100)); t.ok(input.getX() === 180, 'movement in the action zone never steers');
-  L.pointerdown(pe(300, 511)); t.ok(actions === 2 && input.getX() === 180, 'y just above the rail is still the action zone');
-  L.pointerdown(pe(60, 600, 2)); t.ok(input.getX() === 60 && input.isDown() && downs === 1 && actions === 2, 'touch in the rail steers 1:1 and is not an action');
-  L.pointermove(pe(200, 100, 2)); t.ok(input.getX() === 200, 'steering finger keeps steering after sliding up out of the rail');
-  L.pointerdown(pe(10, 50, 3)); t.ok(actions === 3 && input.getX() === 200, 'two-handed: 2nd finger taps the action zone while steering');
-  L.pointerup(pe(10, 50, 3)); t.ok(input.isDown(), 'lifting the action finger does not release steering');
-  L.pointerup(pe(200, 100, 2)); t.ok(!input.isDown() && ups === 1, 'lifting the steering finger releases');
-  L.pointermove(pe(100, 300, 1, 'mouse', 0)); t.ok(input.getX() === 200, 'hovering mouse above the rail does not steer');
-  L.pointermove(pe(100, 600, 1, 'mouse', 0)); t.ok(input.getX() === 100, 'hovering mouse inside the rail steers');
-  const a2 = []; const off = input.listen('action', () => a2.push(1)); input.act(); off(); input.act();
-  t.ok(a2.length === 1 && actions === 5, 'listen() subscribers + act() programmatic action; unsubscribe works');
+  const doc = { createElement: mkEl };
+  const input = new AnchorInput({ container: mkEl(), document: doc, width: 360, height: 640, steerFrac: 0.2, relative: true, now: () => clock,
+    on: { onAction: () => actions++, onDown: () => downs++, onUp: () => ups++ } });
+  const pe = (x, y, id = 1, type = 'touch') => ({ clientX: x, clientY: y, pointerId: id, pointerType: type, buttons: 1, preventDefault() {} });
+  const L = input.el.listeners, Y = 600;                                    // y >= 512 is the rail
+  t.ok(input.railTop === 512 && input.strip.style.height === '20%', 'rail = bottom 20% (y >= 512 of 640)');
+  t.ok(input.getX() === 180, 'paddle starts centred');
+
+  // top 80% listens to nothing
+  L.pointerdown(pe(300, 100)); L.pointermove(pe(40, 100)); L.pointerup(pe(40, 100));
+  t.ok(input.getX() === 180 && !input.isDown() && actions === 0 && downs === 0, 'touches in the top 80% are ignored: no steer, no action, no down');
+  L.pointerdown(pe(300, 511)); L.pointerup(pe(300, 511));
+  t.ok(actions === 0 && downs === 0, 'y just above the rail is still ignored');
+
+  // relative: touching far from the paddle does not teleport it
+  clock = 1000; L.pointerdown(pe(40, Y)); t.ok(input.getX() === 180 && input.isDown() && downs === 1, 'touch-start at x=40 leaves the paddle at 180 (no teleport)');
+  L.pointermove(pe(70, Y)); t.ok(input.getX() === 210, 'dragging +30px moves the paddle +30 from its start');
+  L.pointermove(pe(10, Y)); t.ok(input.getX() === 150, 'dragging back past the start moves it below 180 (delta from touch-start)');
+  L.pointermove(pe(70, 100)); t.ok(input.getX() === 210, 'the steering finger keeps steering after sliding up out of the rail');
+  clock = 2000; L.pointerup(pe(70, 100)); t.ok(!input.isDown() && ups === 1 && actions === 0, 'a long drag is not a tap');
+
+  // lift and re-place elsewhere: new drag from the current paddle x
+  L.pointerdown(pe(300, Y)); t.ok(input.getX() === 210, 're-touch at x=300: paddle stays at 210');
+  L.pointermove(pe(290, Y)); t.ok(input.getX() === 200, 'new drag is relative to the new touch-start (-10 -> 200)');
+  clock = 3000; L.pointerup(pe(290, Y));
+
+  // edge clamp re-bases the anchor (no dead zone)
+  input.setBounds(32, 328); clock = 4000; L.pointerdown(pe(100, Y));
+  L.pointermove(pe(400, Y)); t.ok(input.getX() === 328, 'clamped at the right bound');
+  L.pointermove(pe(380, Y)); t.ok(input.getX() === 308, 'reverses immediately after overshooting the bound (anchor re-based)');
+  input.setBounds(60, 300); t.ok(input.getX() === 300, 'setBounds re-clamps an active drag');
+  L.pointermove(pe(370, Y)); t.ok(near(input.getX(), 290), 'drag continues from the re-clamped x after a bounds change (no jump)');
+  clock = 9000; L.pointerup(pe(370, Y)); input.setBounds(0, 360);
+
+  // taps
+  actions = 0; input.feed(180, false);
+  clock = 10000; L.pointerdown(pe(100, Y)); clock = 10120; L.pointerup(pe(103, Y));
+  t.ok(actions === 1, 'quick (120ms), short (3px) press = tap -> onAction');
+  t.ok(Math.abs(input.getX() - 180) <= 3, 'a tap barely moves the paddle (only its <=3px jitter)');
+  clock = 11000; L.pointerdown(pe(100, Y)); clock = 11250; L.pointerup(pe(100, Y)); t.ok(actions === 1, 'press held 250ms is not a tap');
+  clock = 12000; L.pointerdown(pe(100, Y)); clock = 12100; L.pointermove(pe(100, Y)); L.pointermove(pe(112, Y)); L.pointerup(pe(100, Y)); t.ok(actions === 1, 'moved 12px (>10) is not a tap even if released where it started');
+  clock = 13000; L.pointerdown(pe(100, Y)); clock = 13050; L.pointermove(pe(100, Y - 30)); L.pointerup(pe(100, Y - 30)); t.ok(actions === 1, 'vertical travel counts toward the 10px limit');
+  clock = 14000; L.pointerdown(pe(100, Y)); clock = 14050; L.pointercancel(pe(100, Y)); t.ok(actions === 1, 'a cancelled pointer is never a tap');
+  clock = 15000; L.pointerdown(pe(100, Y)); clock = 15190; L.pointerup(pe(106, Y)); t.ok(actions === 2, '190ms / 6px is still a tap');
+  clock = 16000; L.pointerdown(pe(50, Y, 1)); L.pointerdown(pe(300, Y, 2)); clock = 16050; L.pointerup(pe(300, Y, 2)); t.ok(actions === 2 && input.isDown(), 'a second finger on the rail is ignored');
+  L.pointerup(pe(50, Y, 1));
+  const before = input.getX(); L.pointermove(pe(5, Y, 1, 'mouse')); t.ok(input.getX() === before, 'hovering (no press) never steers in relative mode');
+
+  // programmatic path unchanged: feed() is absolute, act() fires onAction
+  input.feed(77, true); t.ok(input.getX() === 77, 'feed() still positions absolutely (bots)'); input.feed(77, false);
+  const a2 = []; const off = input.listen('action', () => a2.push(1)); input.act(); off(); input.act(); t.ok(a2.length === 1, 'listen()/act() work; unsubscribe works');
+
+  // legacy default (no steerFrac / relative) is unchanged: whole screen, absolute
   const legacy = new AnchorInput({ container: mkEl(), document: doc, width: 360, height: 640 });
-  legacy.el.listeners.pointerdown(pe(90, 10)); t.ok(legacy.getX() === 90 && legacy.isDown(), 'steerFrac 0 (default) keeps whole-screen steering');
+  legacy.el.listeners.pointerdown(pe(90, 10)); t.ok(legacy.getX() === 90 && legacy.isDown(), 'default mode keeps whole-screen absolute steering');
 }
-// ---- action wiring: action zone releases Catch / fires Laser; START tap is not an action
+// ---- the START tap must not also launch the ball
+{
+  const mkEl = () => { const o = { style: {}, children: [], listeners: {}, appendChild() {}, removeChild() {}, addEventListener(t, f) { o.listeners[t] = f; }, removeEventListener() {}, setAttribute() {}, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 360, height: 640 }) }; return o; };
+  let clock = 0, game, loop;
+  const input = new AnchorInput({ container: mkEl(), document: { createElement: mkEl }, steerFrac: 0.2, relative: true, now: () => clock, on: { onDown: () => { if (loop.state === State.START) loop.start(); } } });
+  loop = new AnchorLoop({ update: (d) => game.update(d), draw: () => {}, raf: null, caf: () => {}, now: () => 0, autoPause: false, maxDt: Infinity });
+  game = G.createGame({ input, rng: mulberry32(1), loop }, { storage: null });
+  const L = input.el.listeners, pe = (x, y) => ({ clientX: x, clientY: y, pointerId: 1, pointerType: 'touch', buttons: 1, preventDefault() {} });
+  L.pointerdown(pe(100, 600)); clock = 80; L.pointerup(pe(100, 600));
+  t.ok(loop.state === State.PLAY && game.internals.balls[0].stuck, 'tap on START starts the game but keeps the ball on the paddle');
+  clock = 1000; L.pointerdown(pe(100, 600)); clock = 1080; L.pointerup(pe(100, 600));
+  t.ok(!game.internals.balls[0].stuck, 'the next rail tap (in PLAY) launches it');
+}
+// ---- action wiring: rail tap releases Catch / fires Laser; START tap is not an action
 {
   const { input, game, loop, I } = mk({ levels: [['############', '############']] });
   const b = I.balls[0]; t.ok(b.stuck, 'ball waits on the paddle');
