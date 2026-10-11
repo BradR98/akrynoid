@@ -1,0 +1,8 @@
+{
+  "name": "akrynoid",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Arcade Anchor framework (lib/) + Akrynoid, an Arkanoid-style mobile game built on it",
+  "scripts": { "test": "node test/anchor.test.mjs" }
+}

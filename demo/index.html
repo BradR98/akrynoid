@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Anchor demo - catcher</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b1020; overflow: hidden; touch-action: none; font-family: system-ui, sans-serif; }
+  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #stage { position: relative; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #msg { position: absolute; left: 0; right: 0; top: 38%; text-align: center; color: #fff; font-weight: 800; font-size: 22px; pointer-events: none; z-index: 3; text-shadow: 0 0 18px #3aa0ff; }
+</style></head>
+<body><div id="wrap"><div id="stage"><canvas id="game"></canvas><div id="msg">TAP TO START</div></div></div>
+<script type="module">
+  // Reference wiring of the three Anchor libs around a trivial game.
+  import { AnchorLoop, State } from '../lib/anchor-loop.js';
+  import { AnchorInput } from '../lib/anchor-input.js';
+  import { createCatcher } from '../examples/catcher-game.js';
+
+  const W = 360, H = 640, stage = document.getElementById('stage'), canvas = document.getElementById('game'), ctx = canvas.getContext('2d'), msg = document.getElementById('msg');
+  function resize() {
+    const s = Math.min(innerWidth / W, innerHeight / H), dpr = Math.min(devicePixelRatio || 1, 2);
+    stage.style.width = Math.floor(W * s) + 'px'; stage.style.height = Math.floor(H * s) + 'px';
+    canvas.width = Math.floor(W * s * dpr); canvas.height = Math.floor(H * s * dpr); ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
+  }
+  addEventListener('resize', resize); resize();
+
+  let game, loop;
+  const input = new AnchorInput({ container: stage, width: W, height: H, on: { onDown: () => { if (loop.state === State.START || loop.state === State.GAMEOVER) newGame(); } } });
+  function newGame() { game = createCatcher({ input, rng: Math.random, loop }); loop.state === State.GAMEOVER && loop.reset(); loop.start(); }
+  loop = new AnchorLoop({
+    update: (dt) => game.update(dt),
+    draw: () => { ctx.fillStyle = '#121a35'; ctx.fillRect(0, 0, W, H); if (game) game.draw(ctx); },
+    onState: (n) => { msg.textContent = n === State.GAMEOVER ? (game.outcome() === 'win' ? 'YOU WIN - tap to replay' : 'GAME OVER - tap to retry') : (n === State.PLAY ? '' : n === State.PAUSE ? 'PAUSED' : 'TAP TO START'); },
+  });
+  loop.boot();
+</script></body></html>
