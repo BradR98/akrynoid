@@ -32,6 +32,8 @@ export const LASER_SPEED = 520, LASER_COOLDOWN = 0.14, MAX_LASERS = 12;
 export const STEER_FRAC = 0.2;                      // bottom 20% of the screen is the steering rail; the rest is the action zone
 export const STALL_TIME = 3, STALL_VY = 0.3, STALL_VX = 0.05, STALL_NUDGE = 0.3;   // anti-stall (direction components, unit vector)
 export const GOLD_SHAKE_MULT = 1.2;                  // ball speed multiplier from which a Gold hit shakes the screen
+export const MERCY_MIN = 12, MERCY_MAX = 15;       // Mercy Aim: seconds without brick damage before the next bounce is nudged
+export const MERCY_DEG_MIN = 3, MERCY_DEG_MAX = 5;  // ... by a random +- angle in this range (degrees)
 export const MAX_PARTICLES = 128;
 const MAX_STEP = 4;                                   // max px a ball travels per collision sub-step (anti-tunnelling)
 const MIN_VY = 0.2;                                   // keeps the ball from going (near-)horizontal forever
@@ -203,7 +205,8 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   const lasers = Array.from({ length: MAX_LASERS }, () => new Laser());
 
   let level = 0, lives = START_LIVES, score = 0, high = 0, destroyed = 0, minLives = START_LIVES;
-  let speedMult = 1, catchOn = false, laserOn = false, laserCd = 0, won = false, stalls = 0;
+  let speedMult = 1, catchOn = false, laserOn = false, laserCd = 0, won = false, stalls = 0, mercies = 0;
+  let idleT = 0, mercyAt = 0, mercyArmed = false;       // Mercy Aim state (idleT = s since a brick was last damaged)
   let shake = 0, lastDraw = 0;
   const fx = new Particles();
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -218,6 +221,16 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
 
   /* ---- helpers ---- */
   const speed = () => BASE_SPEED * speedMult;
+  /** Restart the Mercy Aim countdown and pick the next trigger time in [MERCY_MIN, MERCY_MAX]. Uses the VFX PRNG, not gameplay rng. */
+  function resetMercy() { idleT = 0; mercyArmed = false; mercyAt = MERCY_MIN + fx.rnd() * (MERCY_MAX - MERCY_MIN); }
+  /** If armed, rotate this ball's direction by a random +-3..5 degrees (called on its paddle / wall bounce) to break geometric loops. */
+  function applyMercy(b) {
+    if (!mercyArmed) return;
+    const a = (fx.rnd() < 0.5 ? -1 : 1) * (MERCY_DEG_MIN + fx.rnd() * (MERCY_DEG_MAX - MERCY_DEG_MIN)) * Math.PI / 180;
+    const c = Math.cos(a), sn = Math.sin(a), dx = b.dx * c - b.dy * sn, dy = b.dx * sn + b.dy * c;
+    b.dx = dx; b.dy = dy; b.guard(); b.flatT = b.vertT = 0;
+    mercies++; resetMercy(); emit('mercy');
+  }
   function addScore(n) { score += n; scoreStr = pad6(score); if (score > high) { high = score; highStr = scoreStr; } }
   function saveHigh() { try { if (storage && score >= high && score > 0) storage.setItem(HS_KEY, String(high)); } catch (_) {} }
   function acquireBall() { for (let i = 0; i < MAX_BALLS; i++) if (!balls[i].active) return balls[i]; return null; }
@@ -238,6 +251,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
       if (fromBall && kind === KIND.GOLD && speedMult >= GOLD_SHAKE_MULT) kick(3 + 4 * (speedMult - 1) / (MAX_SPEED_MULT - 1));   // hard knock at speed
       emit('gold'); return;
     }
+    idleT = 0; mercyArmed = false;                                                        // any damage (hit or kill) counts as progress
     if (res === 1) { addScore(5); emit('hard'); return; }
     fx.burst(((i % COLS) + 0.5) * BW, GRID_TOP + ((i / COLS | 0) + 0.5) * BH, kind === KIND.SILVER ? SILVER_SHADES[1] : ROW_COLORS[(i / COLS | 0) % ROW_COLORS.length]);
     addScore(kind === KIND.SILVER ? 50 : 10);
@@ -291,15 +305,15 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
     for (let s = 0; s < n && b.active; s++) {
       b.x += b.dx * h; b.y += b.dy * h;
       // walls: left, right, top
-      if (b.x < BALL_R) { b.x = BALL_R; b.dx = Math.abs(b.dx); emit('wall'); }
-      else if (b.x > W - BALL_R) { b.x = W - BALL_R; b.dx = -Math.abs(b.dx); emit('wall'); }
-      if (b.y < HUD_H + BALL_R) { b.y = HUD_H + BALL_R; b.dy = Math.abs(b.dy); b.guard(); emit('wall'); }
+      if (b.x < BALL_R) { b.x = BALL_R; b.dx = Math.abs(b.dx); emit('wall'); applyMercy(b); }
+      else if (b.x > W - BALL_R) { b.x = W - BALL_R; b.dx = -Math.abs(b.dx); emit('wall'); applyMercy(b); }
+      if (b.y < HUD_H + BALL_R) { b.y = HUD_H + BALL_R; b.dy = Math.abs(b.dy); b.guard(); emit('wall'); applyMercy(b); }
       // paddle
       const top = paddle.top, left = paddle.x - paddle.w / 2, right = paddle.x + paddle.w / 2;
       if (b.dy > 0 && b.y + BALL_R >= top && b.y - BALL_R <= top + paddle.h && b.x >= left - BALL_R && b.x <= right + BALL_R) {
         b.y = top - BALL_R; emit('paddle');
         if (catchOn) { b.stuck = true; b.off = Math.max(-paddle.w / 2, Math.min(paddle.w / 2, b.x - paddle.x)); return; }
-        b.launch(reflectAngle((b.x - left) / paddle.w));
+        b.launch(reflectAngle((b.x - left) / paddle.w)); applyMercy(b);
       }
       collideBricks(b);
       if (b.y - BALL_R > H) b.active = false;                   // bottom wall: ball lost
@@ -366,11 +380,11 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
 
   /* ---- game flow ---- */
   function loadLevel() {
-    bricks.load(levels[level]); clearPools(); resetPowerups(); speedMult = 1; laserCd = 0; serve();
+    bricks.load(levels[level]); clearPools(); resetPowerups(); speedMult = 1; laserCd = 0; resetMercy(); serve();
   }
   function loseLife() {
     lives--; minLives = Math.min(minLives, lives); emit('life', lives);
-    clearPools(); resetPowerups(); speedMult = 1; kick(9);                                // velocity reset + shake
+    clearPools(); resetPowerups(); speedMult = 1; kick(9); resetMercy();                                // velocity reset + shake
     if (lives > 0) serve(); else { saveHigh(); emit('gameover'); loop.gameOver(); }
   }
 
@@ -384,6 +398,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
         if (b.stuck) { b.off = Math.max(-paddle.w / 2, Math.min(paddle.w / 2, b.off)); b.x = paddle.x + b.off; b.y = paddle.top - BALL_R; }
         else { moveBall(b, dt); if (b.active && b.watch(dt)) { stalls++; emit('stall'); } }
       }
+      if (activeBalls() > 0 && !anyStuck()) { idleT += dt; if (idleT >= mercyAt) mercyArmed = true; }   // Mercy Aim clock (free-flying balls only)
       updateLasers(dt); updateCapsules(dt);
 
       if (bricks.remaining <= 0) {                                                       // win condition
@@ -400,7 +415,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
     /** Fresh run (call from GAMEOVER, then loop.reset(); loop.start()). */
     restart() {
       level = 0; lives = START_LIVES; minLives = START_LIVES; score = 0; scoreStr = pad6(0); destroyed = 0; won = false;
-      loadLevel(); stalls = 0;
+      loadLevel(); stalls = 0; mercies = 0;
     },
 
     /** Render the whole frame to the main canvas (logical 360x640 coordinates). */
@@ -491,13 +506,14 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
                lives, score, level: level + 1, bricksLeft: bricks.remaining, balls: activeBalls() };
     },
     outcome: () => (won ? 'win' : 'lose'),
-    stats: () => ({ score, level: level + 1, destroyed, minLives, lives, stalls }),
+    stats: () => ({ score, level: level + 1, destroyed, minLives, lives, stalls, mercies }),
     get won() { return won; },
     get speedMult() { return speedMult; },
     get speed() { return speed(); },
     get flags() { return { catchOn, laserOn, expanded: paddle.targetW > PADDLE_W }; },
     /** Direct access to the pooled entities (tests / debug tooling). */
     get shake() { return shake; },
+    get mercy() { return { idle: idleT, armed: mercyArmed, at: mercyAt }; },
     internals: { paddle, bricks, balls, caps, lasers, fx, spawnCapsule, applyCapsule, kick },
   };
 

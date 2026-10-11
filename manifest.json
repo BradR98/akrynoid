@@ -1,0 +1,17 @@
+{
+  "name": "Akrynoid",
+  "short_name": "Akrynoid",
+  "description": "Ad-free Arkanoid-style brick breaker. Plays offline.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "id": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "portrait",
+  "background_color": "#05060f",
+  "theme_color": "#05060f",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

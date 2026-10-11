@@ -257,6 +257,36 @@ const cellCenter = (r, c) => [(c + 0.5) * G.BW, G.GRID_TOP + (r + 0.5) * G.BH];
   t.ok(g4.game.shake >= 9 && g4.game.observe().lives === 2, 'losing a life shakes the screen');
 }
 
+// ---- Mercy Aim (anti-stall v2)
+{
+  const { input, game, I } = mk({ levels: [['G#..........']] }); const b = I.balls[0];
+  for (let f = 0; f < 60 * 20; f++) game.update(1 / 60);                       // ball is still stuck on the paddle
+  t.ok(game.mercy.idle === 0 && !game.mercy.armed, 'clock does not run while the ball is held on the paddle');
+  t.ok(game.mercy.at >= G.MERCY_MIN && game.mercy.at <= G.MERCY_MAX, `trigger time is randomised in [${G.MERCY_MIN}, ${G.MERCY_MAX}] s (${game.mercy.at.toFixed(1)})`);
+  input.act(); const trig = game.mercy.at;
+  const pin = () => { b.x = 180; b.y = 300; b.dx = 0.5; b.dy = 0.8660254; };
+  pin(); let tArm = -1; for (let f = 0; f < 60 * 20 && tArm < 0; f++) { pin(); game.update(1 / 60); if (game.mercy.armed) tArm = f / 60; }
+  t.ok(tArm >= trig - 0.1 && tArm <= trig + 0.1 && tArm >= 12 && tArm <= 15.1, `armed after ${tArm.toFixed(1)}s without brick damage`);
+  t.ok(near(b.dx, 0.5) && near(b.dy, 0.8660254), 'arming alone does not change the trajectory (waits for a bounce)');
+  place(b, G.W - 4, 300, 0.5, 0.8660254); game.update(1 / 120);                  // wall bounce
+  const ang = (v) => Math.atan2(v.dx, v.dy), d = Math.abs(Math.atan2(Math.sin(ang(b) - Math.atan2(-0.5, 0.8660254)), Math.cos(ang(b) - Math.atan2(-0.5, 0.8660254)))) * 180 / Math.PI;
+  t.ok(d >= 2.9 && d <= 5.1, `next wall bounce nudged by ${d.toFixed(2)} deg (3-5)`);
+  t.ok(!game.mercy.armed && game.mercy.idle < 0.1 && game.stats().mercies === 1 && near(Math.hypot(b.dx, b.dy), 1), 'one nudge, clock re-armed, direction still unit length');
+  // paddle bounce also carries the nudge; brick damage resets the clock
+  for (let f = 0; f < 60 * 16; f++) { pin(); game.update(1 / 60); }
+  t.ok(game.mercy.armed, 're-arms after another quiet period');
+  place(b, 100, I.paddle.top - G.BALL_R + 1, 0, 1); input.feed(100 + 0.5 * 0, false); game.update(1 / 600);
+  t.ok(game.stats().mercies === 2, 'paddle bounce also delivers the nudge');
+  const { game: g2, I: I2 } = mk({ levels: [['S...........', '......G.....']] }); const bb = I2.balls[0]; g2.update(1 / 60); g2.internals.balls[0].stuck = false;
+  const pin2 = () => { bb.x = 180; bb.y = 300; bb.dx = 0.5; bb.dy = 0.866; };
+  for (let f = 0; f < 60 * 11; f++) { pin2(); g2.update(1 / 60); }
+  const [sx, sy] = cellCenter(0, 0); place(bb, sx, sy + G.BH / 2 + G.BALL_R - 1, 0, -1); g2.update(1 / 300);    // silver takes damage (not destroyed)
+  t.ok(g2.mercy.idle < 0.1 && I2.bricks.hp[0] === 2, 'damaging (not just destroying) a brick resets the clock');
+  for (let f = 0; f < 60 * 11; f++) { pin2(); g2.update(1 / 60); }
+  const [gx, gy] = cellCenter(1, 6); place(bb, gx, gy + G.BH / 2 + G.BALL_R - 1, 0, -1); g2.update(1 / 300);
+  t.ok(g2.mercy.idle > 10, 'hitting indestructible Gold does not reset the clock');
+}
+
 // ---- headless integration
 {
   const mkGame = (d) => G.createGame(d, { storage: null });
