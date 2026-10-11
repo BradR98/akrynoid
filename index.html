@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05060f">
+<title>Akrynoid</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05060f; overflow: hidden; touch-action: none; overscroll-behavior: none; font-family: system-ui, sans-serif; }
+  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #stage { position: relative; }
+  canvas { display: block; width: 100%; height: 100%; }
+</style></head>
+<body><div id="wrap"><div id="stage"><canvas id="game"></canvas></div></div>
+<script type="module">
+  import { mount } from './game.js';
+  mount(document.getElementById('stage'), document.getElementById('game'));
+</script></body></html>
