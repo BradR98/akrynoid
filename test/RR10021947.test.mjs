@@ -6,7 +6,7 @@ import { createAudio } from '../lib/anchor-audio.js';
 import { BUILD_VERSION } from '../version.js';
 
 console.log('\n=======================================');
-console.log('   AKRYNOID TEST SUITE - BUILD ' + BUILD_VERSION);
+console.log('   RR10021947 TEST SUITE - BUILD ' + BUILD_VERSION);
 console.log('=======================================\n');
 
 const t = createTester();
@@ -395,7 +395,7 @@ const cellCenter = (r, c) => [(c + 0.5) * G.BW, G.GRID_TOP + (r + 0.5) * G.BH];
   // advancing level saves the state
   g1.internals.applyCapsule('E'); // adds 100 score
   g1.nextLevel();
-  const saved = JSON.parse(st.getItem('akrynoid-save'));
+  const saved = JSON.parse(st.getItem('RR10021947-save'));
   t.ok(saved && saved.level === 1 && saved.score === 100 && saved.lives === 3, 'nextLevel auto-saves state');
 
   // 2. Restarting the app loads the saved state
@@ -411,7 +411,7 @@ const cellCenter = (r, c) => [(c + 0.5) * G.BW, G.GRID_TOP + (r + 0.5) * G.BH];
     g2.update(1 / 60);
   }
   t.ok(loop2.state === State.GAMEOVER, 'game over reached');
-  t.ok(st.getItem('akrynoid-save') === null, 'GAMEOVER wipes the save file');
+  t.ok(st.getItem('RR10021947-save') === null, 'GAMEOVER wipes the save file');
 
   // 4. Restarting after GAMEOVER starts fresh
   const input3 = new AnchorInput({ width: G.W, height: G.H });

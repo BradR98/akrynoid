@@ -10,7 +10,7 @@ const t = createTester();
 
 // ---- manifest
 const m = JSON.parse(read('manifest.json'));
-t.ok(m.name === 'Akrynoid' && m.short_name === 'Akrynoid', 'manifest: name + short_name');
+t.ok(m.name === 'Arktrix' && m.short_name === 'Arktrix', 'manifest: name + short_name');
 t.ok(m.display === 'fullscreen' && m.orientation === 'portrait', 'manifest: fullscreen, portrait');
 t.ok(/^#0[0-9a-f]{5}$/i.test(m.background_color) && /^#0[0-9a-f]{5}$/i.test(m.theme_color), 'manifest: dark background_color + theme_color');
 t.ok(m.start_url && m.scope, 'manifest: start_url + scope are relative (works under /akrynoid/)');
@@ -50,7 +50,7 @@ const listed = [...swSrc.matchAll(/'([^']+\.(?:js|json|png|html))'/g)].map((x) =
 for (const f of ['index.html', 'game.js', 'manifest.json', ...m.icons.map((i) => i.src), 'icons/icon-180.png']) t.ok(listed.includes(f), `sw precache lists ${f}`);
 const imported = [...read('game.js').matchAll(/from '\.\/([^']+\.js)'/g)].map((x) => x[1]).filter((f) => !f.startsWith('lib/'));
 t.ok(imported.includes('levels.js') && imported.includes('version.js') && imported.every((f) => listed.includes(f)), `sw precache lists every local module game.js imports (${imported.join(', ')})`);
-t.ok(/const CACHE = 'akrynoid-v12'/.test(swSrc), 'cache version bumped to v12');
+t.ok(/const CACHE = 'RR10021947-v13'/.test(swSrc), 'cache version bumped to RR10021947-v13');
 t.ok(lib.length >= 3 && lib.every((f) => listed.includes('lib/' + f)), `sw precache lists every file in lib/ (${lib.join(', ')})`);
 t.ok(listed.every((f) => existsSync(join(root, f))), 'every precached path exists on disk');
 

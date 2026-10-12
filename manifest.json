@@ -1,6 +1,6 @@
 {
-  "name": "Akrynoid",
-  "short_name": "Akrynoid",
+  "name": "Arktrix",
+  "short_name": "Arktrix",
   "description": "Ad-free Arkanoid-style brick breaker. Plays offline.",
   "start_url": "./index.html",
   "scope": "./",

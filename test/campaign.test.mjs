@@ -4,7 +4,7 @@ import { mulberry32, createTester } from '../lib/anchor-headless.js';
 import * as G from '../game.js';
 import { generateLevel, validateLevel, levelSpec, CAMPAIGN_LEVELS, SILVER_FROM, GOLD_FROM } from '../levels.js';
 import { loadBoard, saveBoard, qualifies, insertScore, cleanName, LB_SIZE } from '../lib/anchor-leaderboard.js';
-const LB_KEY = 'akrynoid.leaderboard';
+const LB_KEY = 'RR10021947.leaderboard';
 
 const t = createTester();
 const count = (rows, ch) => rows.join('').split(ch).length - 1;

@@ -24,6 +24,9 @@ import { loadState, saveState, clearState } from './lib/anchor-save.js';
 import { createAudio } from './lib/anchor-audio.js';
 import { createControls } from './lib/anchor-ui.js';
 import { BUILD_VERSION } from './version.js';
+
+export const GAME_CONFIG = { title: "Arktrix", theme: "default" };
+
 export { generateLevel, CAMPAIGN_LEVELS };
 
 /* ----------------------------------------------------------------------------------------------- constants */
@@ -205,13 +208,13 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   const onLevelClear = opts.onLevelClear || ((g) => { g.nextLevel(); loop.start(); });
   let storage = null;
   try { storage = 'storage' in opts ? opts.storage : (typeof localStorage !== 'undefined' ? localStorage : null); } catch (_) { storage = null; }
-  const LEGACY_HS_KEY = 'akrynoid.highscore';        // pre-leaderboard single high score, still honoured for the HUD
+  const LEGACY_HS_KEY = 'RR10021947.highscore';        // pre-leaderboard single high score, still honoured for the HUD
 
   const paddle = new Paddle(), bricks = new Bricks();
   const balls = Array.from({ length: MAX_BALLS }, () => new Ball());
   const caps = Array.from({ length: MAX_CAPSULES }, () => new Capsule());
   const lasers = Array.from({ length: MAX_LASERS }, () => new Laser());
-  const saveKey = opts.saveKey || 'akrynoid-save';
+  const saveKey = opts.saveKey || 'RR10021947-save';
 
   let level = 0, lives = START_LIVES, score = 0, high = 0, destroyed = 0, minLives = START_LIVES;
   const savedState = loadState(storage, saveKey);
@@ -230,7 +233,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   const kick = (mag) => { if (mag > shake) shake = mag; };
   const pad6 = (n) => String(n).padStart(6, '0');
   let scoreStr = pad6(score), highStr = '000000';
-  let board = loadBoard(storage, 'akrynoid.leaderboard'), lastRank = -1, overAt = 0, roundStr = 'RD 1';
+  let board = loadBoard(storage, 'RR10021947.leaderboard'), lastRank = -1, overAt = 0, roundStr = 'RD 1';
   let entryName = '', entryX = 0, entryT0 = 0, pressOk = false, lbLines = [];
   try { high = Math.max(board.length ? board[0].score : 0, storage ? (parseInt(storage.getItem(LEGACY_HS_KEY), 10) || 0) : 0); } catch (_) { high = board.length ? board[0].score : 0; }
   highStr = pad6(high);
@@ -436,7 +439,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   function entrySubmit() {
     if (!entryName.length) return;
     const res = insertScore(board, { name: cleanName(entryName), score, level: level + 1 });
-    board = res.board; lastRank = res.rank; saveBoard(storage, board, 'akrynoid.leaderboard'); buildLines();
+    board = res.board; lastRank = res.rank; saveBoard(storage, board, 'RR10021947.leaderboard'); buildLines();
     if (board.length) { high = Math.max(high, board[0].score); highStr = pad6(high); }
     overAt = now(); emit('highscore', res.rank); loop.finishEntry();
   }
@@ -600,7 +603,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
         ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, HUD_H, W, H - HUD_H);
         const over = st === State.GAMEOVER;
         ctx.fillStyle = '#fff'; ctx.font = 'bold 30px "Courier New", monospace';
-        const title = st === State.START ? 'AKRYNOID' : st === State.PAUSE ? 'PAUSED' : st === State.LEVEL_CLEAR ? 'ROUND CLEAR' : (won ? 'YOU WIN' : 'GAME OVER');
+        const title = st === State.START ? GAME_CONFIG.title.toUpperCase() : st === State.PAUSE ? 'PAUSED' : st === State.LEVEL_CLEAR ? 'ROUND CLEAR' : (won ? 'YOU WIN' : 'GAME OVER');
         ctx.fillText(title, W / 2, over ? 90 : 270);
         ctx.font = 'bold 14px "Courier New", monospace'; ctx.fillStyle = '#9aa5ff';
         const sub = st === State.START ? 'TAP TO START' : st === State.PAUSE ? 'TAP TO RESUME' : st === State.LEVEL_CLEAR ? 'GET READY...' : 'TAP TO RETRY';
