@@ -2,7 +2,12 @@ import { AnchorLoop, State } from '../lib/anchor-loop.js';
 import { AnchorInput } from '../lib/anchor-input.js';
 import { runSim, bots, mulberry32, createTester } from '../lib/anchor-headless.js';
 import * as G from '../game.js';
-import { createAudio } from '../audio.js';
+import { createAudio } from '../lib/anchor-audio.js';
+import { BUILD_VERSION } from '../version.js';
+
+console.log('\n=======================================');
+console.log('   AKRYNOID TEST SUITE - BUILD ' + BUILD_VERSION);
+console.log('=======================================\n');
 
 const t = createTester();
 const near = (a, b, e = 1e-6) => Math.abs(a - b) < e;

@@ -3,7 +3,8 @@ import { AnchorInput } from '../lib/anchor-input.js';
 import { mulberry32, createTester } from '../lib/anchor-headless.js';
 import * as G from '../game.js';
 import { generateLevel, validateLevel, levelSpec, CAMPAIGN_LEVELS, SILVER_FROM, GOLD_FROM } from '../levels.js';
-import { loadBoard, saveBoard, qualifies, insertScore, cleanName, LB_KEY, LB_SIZE } from '../leaderboard.js';
+import { loadBoard, saveBoard, qualifies, insertScore, cleanName, LB_SIZE } from '../lib/anchor-leaderboard.js';
+const LB_KEY = 'akrynoid.leaderboard';
 
 const t = createTester();
 const count = (rows, ch) => rows.join('').split(ch).length - 1;
@@ -53,11 +54,11 @@ const count = (rows, ch) => rows.join('').split(ch).length - 1;
   const miss = insertScore(b, { name: 'ZZZ', score: 100, level: 1 }); t.ok(miss.rank === -1 && miss.board.length === 10 && miss.board[9].score === 100, 'a non-qualifying score is not inserted');
   const r = insertScore(b, { name: 'new', score: 550, level: 5 }); t.ok(r.rank === 5 && r.board[5].name === 'NEW' && r.board.length === 10 && r.board[9].score === 200 && b.length === 10 && b[9].score === 100, 'insert at rank 6 pushes 10th out; input not mutated');
   const tie = insertScore(b, { name: 'TIE', score: 1000, level: 1 }); t.ok(tie.rank === 1, 'ties rank below the existing equal score');
-  const st = mem(); saveBoard(st, r.board); const back = loadBoard(st); t.ok(JSON.stringify(back) === JSON.stringify(r.board) && st.getItem(LB_KEY).length > 10, 'saves to / loads from localStorage');
-  t.ok(loadBoard(null).length === 0 && loadBoard({ getItem: () => '{not json' }).length === 0 && loadBoard({ getItem: () => '{"a":1}' }).length === 0, 'corrupt / missing storage -> empty board');
-  const dirty = loadBoard({ getItem: () => JSON.stringify([{ name: '<b>x</b>', score: 5.9, level: 'q' }, { score: -4 }, null, { name: 'OK', score: 'x' }, ...Array.from({ length: 20 }, (_, i) => ({ name: 'ABC', score: 100 + i, level: 1 }))]) });
+  const st = mem(); saveBoard(st, r.board, LB_KEY); const back = loadBoard(st, LB_KEY); t.ok(JSON.stringify(back) === JSON.stringify(r.board) && st.getItem(LB_KEY).length > 10, 'saves to / loads from localStorage');
+  t.ok(loadBoard(null, LB_KEY).length === 0 && loadBoard({ getItem: () => '{not json' }, LB_KEY).length === 0 && loadBoard({ getItem: () => '{"a":1}' }, LB_KEY).length === 0, 'corrupt / missing storage -> empty board');
+  const dirty = loadBoard({ getItem: () => JSON.stringify([{ name: '<b>x</b>', score: 5.9, level: 'q' }, { score: -4 }, null, { name: 'OK', score: 'x' }, ...Array.from({ length: 20 }, (_, i) => ({ name: 'ABC', score: 100 + i, level: 1 }))]) }, LB_KEY);
   t.ok(dirty.length === 10 && dirty.every((e) => /^[A-Z0-9-]{3}$/.test(e.name) && Number.isInteger(e.score) && e.score > 0), 'hostile / junk entries are sanitised and capped at 10');
-  t.ok(saveBoard({ setItem() { throw new Error('quota'); } }, b) === undefined, 'storage write errors are swallowed');
+  t.ok(saveBoard({ setItem() { throw new Error('quota'); } }, b, LB_KEY) === undefined, 'storage write errors are swallowed');
 }
 
 // ---------------------------------------------------------------- NAME_ENTRY flow (fake DOM, relative rail input, injected clock)
@@ -65,7 +66,7 @@ const count = (rows, ch) => rows.join('').split(ch).length - 1;
   const mkEl = () => { const o = { style: {}, children: [], listeners: {}, appendChild() {}, removeChild() {}, addEventListener(ty, f) { o.listeners[ty] = f; }, removeEventListener() {}, setAttribute() {}, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 360, height: 640 }) }; return o; };
   const mem = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, v), m }; };
   const build = (seed = [], opts = {}) => {
-    let clock = 0, game, loop; const storage = mem(); if (seed.length) saveBoard(storage, seed);
+    let clock = 0, game, loop; const storage = mem(); if (seed.length) saveBoard(storage, seed, LB_KEY);
     const input = new AnchorInput({ container: mkEl(), document: { createElement: mkEl }, steerFrac: 0.2, relative: true, now: () => clock });
     loop = new AnchorLoop({ update: (d) => game.update(d), draw: () => {}, raf: null, caf: () => {}, now: () => 0, autoPause: false, maxDt: Infinity });
     game = G.createGame({ input, rng: mulberry32(3), loop }, { storage, now: () => clock, levels: [['#...........']], ...opts });

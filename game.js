@@ -19,9 +19,10 @@
 import { AnchorLoop, State } from './lib/anchor-loop.js';
 import { AnchorInput } from './lib/anchor-input.js';
 import { generateLevel, CAMPAIGN_LEVELS } from './levels.js';
-import { loadBoard, saveBoard, qualifies, insertScore, cleanName, LB_SIZE, NAME_LEN } from './leaderboard.js';
-import { createAudio } from './audio.js';
-import { createControls } from './controls.js';
+import { loadBoard, saveBoard, qualifies, insertScore, cleanName, LB_SIZE, NAME_LEN } from './lib/anchor-leaderboard.js';
+import { createAudio } from './lib/anchor-audio.js';
+import { createControls } from './lib/anchor-ui.js';
+import { BUILD_VERSION } from './version.js';
 export { generateLevel, CAMPAIGN_LEVELS };
 
 /* ----------------------------------------------------------------------------------------------- constants */
@@ -219,7 +220,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   const kick = (mag) => { if (mag > shake) shake = mag; };
   let scoreStr = '000000', highStr = '000000';
   const pad6 = (n) => String(n).padStart(6, '0');
-  let board = loadBoard(storage), lastRank = -1, overAt = 0, roundStr = 'RD 1';
+  let board = loadBoard(storage, 'akrynoid.leaderboard'), lastRank = -1, overAt = 0, roundStr = 'RD 1';
   let entryName = '', entryX = 0, entryT0 = 0, pressOk = false, lbLines = [];
   try { high = Math.max(board.length ? board[0].score : 0, storage ? (parseInt(storage.getItem(LEGACY_HS_KEY), 10) || 0) : 0); } catch (_) { high = board.length ? board[0].score : 0; }
   highStr = pad6(high);
@@ -423,7 +424,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   function entrySubmit() {
     if (!entryName.length) return;
     const res = insertScore(board, { name: cleanName(entryName), score, level: level + 1 });
-    board = res.board; lastRank = res.rank; saveBoard(storage, board); buildLines();
+    board = res.board; lastRank = res.rank; saveBoard(storage, board, 'akrynoid.leaderboard'); buildLines();
     if (board.length) { high = Math.max(high, board[0].score); highStr = pad6(high); }
     overAt = now(); emit('highscore', res.rank); loop.finishEntry();
   }
@@ -596,6 +597,11 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
           drawBoard(ctx, 160);
           ctx.fillStyle = '#9aa5ff'; ctx.font = 'bold 14px "Courier New", monospace'; ctx.fillText(sub, W / 2, 470);
         } else ctx.fillText(sub, W / 2, 310);
+
+        if (st === State.START || st === State.PAUSE) {
+          ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+          ctx.fillText(BUILD_VERSION, W - 4, H - 10);
+        }
       }
       ctx.restore();
     },
