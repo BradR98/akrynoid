@@ -381,4 +381,43 @@ const cellCenter = (r, c) => [(c + 0.5) * G.BW, G.GRID_TOP + (r + 0.5) * G.BH];
   t.ok(loop.state === State.PAUSE, 'toggles to PAUSE');
 }
 
+// ---- save state / auto-resume lifecycle
+{
+  const mem = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, v), removeItem: (k) => m.delete(k) }; };
+  const st = mem();
+
+  // 1. New game loads, no save file -> level 1, 3 lives, score 0
+  const input1 = new AnchorInput({ width: G.W, height: G.H });
+  const loop1 = new AnchorLoop({ update: () => {}, draw: () => {}, raf: null, autoPause: false });
+  const g1 = G.createGame({ input: input1, loop: loop1 }, { storage: st, levels: [['############'], ['############']] });
+  t.ok(g1.stats().level === 1 && g1.stats().lives === 3 && g1.stats().score === 0, 'new game starts with default stats');
+  
+  // advancing level saves the state
+  g1.internals.applyCapsule('E'); // adds 100 score
+  g1.nextLevel();
+  const saved = JSON.parse(st.getItem('akrynoid-save'));
+  t.ok(saved && saved.level === 1 && saved.score === 100 && saved.lives === 3, 'nextLevel auto-saves state');
+
+  // 2. Restarting the app loads the saved state
+  const input2 = new AnchorInput({ width: G.W, height: G.H });
+  const loop2 = new AnchorLoop({ update: () => {}, draw: () => {}, raf: null, autoPause: false });
+  const g2 = G.createGame({ input: input2, loop: loop2 }, { storage: st, levels: [['############'], ['############']], nameEntry: false });
+  t.ok(g2.stats().level === 2 && g2.stats().score === 100 && g2.stats().lives === 3, 'initial load restores saved level, score, lives');
+
+  // 3. Losing all lives clears the save
+  loop2.start();
+  for (let i = 0; i < 3; i++) {
+    g2.internals.balls[0].active = true; g2.internals.balls[0].stuck = false; g2.internals.balls[0].y = G.H + 20; // drop the last ball
+    g2.update(1 / 60);
+  }
+  t.ok(loop2.state === State.GAMEOVER, 'game over reached');
+  t.ok(st.getItem('akrynoid-save') === null, 'GAMEOVER wipes the save file');
+
+  // 4. Restarting after GAMEOVER starts fresh
+  const input3 = new AnchorInput({ width: G.W, height: G.H });
+  const loop3 = new AnchorLoop({ update: () => {}, draw: () => {}, raf: null, autoPause: false });
+  const g3 = G.createGame({ input: input3, loop: loop3 }, { storage: st, levels: [['############'], ['############']] });
+  t.ok(g3.stats().level === 1 && g3.stats().score === 0, 'game after GAMEOVER starts fresh');
+}
+
 process.exit(t.summary());

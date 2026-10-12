@@ -2,7 +2,7 @@
  * Akrynoid service worker: precache the whole app, then serve cache-first so it loads instantly and runs offline.
  * IMPORTANT: cache-first means returning players keep the cached build until CACHE changes. Bump the version below on every deploy.
  */
-const CACHE = 'akrynoid-v10';
+const CACHE = 'akrynoid-v11';
 const PRECACHE = [
   './',
   'index.html',
@@ -19,6 +19,7 @@ const PRECACHE = [
   'lib/anchor-audio.js',
   'lib/anchor-ui.js',
   'lib/anchor-leaderboard.js',
+  'lib/anchor-save.js',
 ];
 
 self.addEventListener('install', (e) => {

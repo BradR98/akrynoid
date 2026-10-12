@@ -20,6 +20,7 @@ import { AnchorLoop, State } from './lib/anchor-loop.js';
 import { AnchorInput } from './lib/anchor-input.js';
 import { generateLevel, CAMPAIGN_LEVELS } from './levels.js';
 import { loadBoard, saveBoard, qualifies, insertScore, cleanName, LB_SIZE, NAME_LEN } from './lib/anchor-leaderboard.js';
+import { loadState, saveState, clearState } from './lib/anchor-save.js';
 import { createAudio } from './lib/anchor-audio.js';
 import { createControls } from './lib/anchor-ui.js';
 import { BUILD_VERSION } from './version.js';
@@ -210,16 +211,25 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   const balls = Array.from({ length: MAX_BALLS }, () => new Ball());
   const caps = Array.from({ length: MAX_CAPSULES }, () => new Capsule());
   const lasers = Array.from({ length: MAX_LASERS }, () => new Laser());
+  const saveKey = opts.saveKey || 'akrynoid-save';
 
   let level = 0, lives = START_LIVES, score = 0, high = 0, destroyed = 0, minLives = START_LIVES;
+  const savedState = loadState(storage, saveKey);
+  if (savedState) {
+    level = Math.min(Math.max(savedState.level || 0, 0), levelCount - 1);
+    score = Math.max(savedState.score || 0, 0);
+    lives = Math.max(savedState.lives || START_LIVES, 1);
+    minLives = lives;
+  }
+
   let speedMult = 1, catchOn = false, laserOn = false, laserCd = 0, won = false, stalls = 0, mercies = 0;
   let idleT = 0, mercyAt = 0, mercyArmed = false;       // Mercy Aim state (idleT = s since a brick was last damaged)
   let shake = 0, lastDraw = 0;
   const fx = new Particles();
   const now = opts.now || (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   const kick = (mag) => { if (mag > shake) shake = mag; };
-  let scoreStr = '000000', highStr = '000000';
   const pad6 = (n) => String(n).padStart(6, '0');
+  let scoreStr = pad6(score), highStr = '000000';
   let board = loadBoard(storage, 'akrynoid.leaderboard'), lastRank = -1, overAt = 0, roundStr = 'RD 1';
   let entryName = '', entryX = 0, entryT0 = 0, pressOk = false, lbLines = [];
   try { high = Math.max(board.length ? board[0].score : 0, storage ? (parseInt(storage.getItem(LEGACY_HS_KEY), 10) || 0) : 0); } catch (_) { high = board.length ? board[0].score : 0; }
@@ -397,6 +407,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   /* ---- game flow ---- */
   function loadLevel() {
     bricks.load(getLevel(level)); roundStr = 'RD ' + (level + 1); clearPools(); resetPowerups(); speedMult = 1; laserCd = 0; resetMercy(); serve();
+    saveState(storage, saveKey, { level, score, lives });
   }
   function loseLife() {
     lives--; minLives = Math.min(minLives, lives); emit('life', lives);
@@ -406,6 +417,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   /** Run over (0 lives, or last level cleared): GAMEOVER, then NAME_ENTRY if the score makes the Top 10. */
   function endRun() {
     overAt = now(); lastRank = -1;
+    clearState(storage, saveKey);
     emit('gameover'); loop.gameOver();
     if (nameEntryOn && qualifies(board, score)) beginEntry();
   }
