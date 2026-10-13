@@ -1,6 +1,6 @@
 # Project Status
 
-- **Game:** Arktrix (engine id `RR10021947`), Arkanoid-style mobile PWA on the Anchor framework.
+- **Game:** Arktrix (internal project ID `RR10021947`, not user-facing; used for storage keys / cache names), Arkanoid-style mobile PWA on the Anchor framework.
 - **Build:** `v14` (`version.js`; `sw.js` cache `RR10021947-v14`).
 - **Phase:** 12 - opt-in DOM HUD, implemented and committed locally; not pushed.
 - **Branch:** `main`; remote `origin` = github.com/BradR98/arktrix.

@@ -1,5 +1,5 @@
 /**
- * game.js - Akrynoid core engine (Phase 2), built on the Anchor libraries.
+ * game.js - Arktrix core engine (Phase 2), built on the Anchor libraries.
  *
  *   createGame({ input, rng, loop }, opts?) -> game   DOM-free; satisfies the Anchor headless game contract
  *                                                    (update / observe / outcome / stats) plus draw(ctx).

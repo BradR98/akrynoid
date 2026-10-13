@@ -1,8 +1,8 @@
 {
-  "name": "akrynoid",
+  "name": "arktrix",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Arcade Anchor framework (lib/) + Akrynoid, an Arkanoid-style mobile game built on it",
+  "description": "Arcade Anchor framework (lib/) + Arktrix, an Arkanoid-style mobile game built on it",
   "scripts": { "test": "node test/anchor.test.mjs && node test/RR10021947.test.mjs && node test/campaign.test.mjs && node test/pwa.test.mjs && node test/hud.test.mjs" }
 }

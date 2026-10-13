@@ -13,7 +13,7 @@ const m = JSON.parse(read('manifest.json'));
 t.ok(m.name === 'Arktrix' && m.short_name === 'Arktrix', 'manifest: name + short_name');
 t.ok(m.display === 'fullscreen' && m.orientation === 'portrait', 'manifest: fullscreen, portrait');
 t.ok(/^#0[0-9a-f]{5}$/i.test(m.background_color) && /^#0[0-9a-f]{5}$/i.test(m.theme_color), 'manifest: dark background_color + theme_color');
-t.ok(m.start_url && m.scope, 'manifest: start_url + scope are relative (works under /akrynoid/)');
+t.ok(m.start_url && m.scope, 'manifest: start_url + scope are relative (works under /arktrix/)');
 for (const size of [192, 512]) {
   const ic = m.icons.find((i) => i.sizes === `${size}x${size}`);
   const ok = ic && existsSync(join(root, ic.src));
@@ -32,13 +32,13 @@ t.ok(/serviceWorker\.register\('\.\/sw\.js'\)/.test(html) && /addEventListener\(
 const swSrc = read('sw.js');
 const listeners = {}, store = new Map();
 const mkCache = (name) => { if (!store.has(name)) store.set(name, new Map()); const c = store.get(name);
-  return { addAll: async (urls) => urls.forEach((u) => c.set(new URL(u, 'https://x.test/akrynoid/sw.js').href, 'cached:' + u)),
+  return { addAll: async (urls) => urls.forEach((u) => c.set(new URL(u, 'https://x.test/arktrix/sw.js').href, 'cached:' + u)),
            put: async (r, res) => { c.set(r.url, res); }, c }; };
 let online = true, fetched = [];
 const sandbox = {
   self: { location: { origin: 'https://x.test' }, addEventListener: (e, f) => { listeners[e] = f; }, skipWaiting: async () => {}, clients: { claim: async () => {} } },
   caches: { open: async (n) => mkCache(n), keys: async () => [...store.keys()], delete: async (k) => store.delete(k),
-            match: async (req, o = {}) => { let url = typeof req === 'string' ? new URL(req, 'https://x.test/akrynoid/').href : req.url; if (o.ignoreSearch) url = url.split('?')[0]; for (const c of store.values()) if (c.has(url)) return c.get(url); return undefined; } },
+            match: async (req, o = {}) => { let url = typeof req === 'string' ? new URL(req, 'https://x.test/arktrix/').href : req.url; if (o.ignoreSearch) url = url.split('?')[0]; for (const c of store.values()) if (c.has(url)) return c.get(url); return undefined; } },
   fetch: async (req) => { fetched.push(req.url); if (!online) throw new Error('offline'); return { ok: true, url: req.url, clone() { return this; } }; },
   URL, Response: { error: () => 'error-response' }, Promise,
 };
@@ -58,17 +58,17 @@ t.ok(listed.every((f) => existsSync(join(root, f))), 'every precached path exist
 await run('install', {});
 const cacheName = [...store.keys()][0];
 t.ok(store.size === 1 && store.get(cacheName).size >= listed.length, `install: precaches the whole app (${store.get(cacheName).size} entries)`);
-store.set('akrynoid-old', new Map()); await run('activate', {});
-t.ok(!store.has('akrynoid-old') && store.has(cacheName), 'activate: old caches are deleted');
+store.set('arktrix-old', new Map()); await run('activate', {});
+t.ok(!store.has('arktrix-old') && store.has(cacheName), 'activate: old caches are deleted');
 online = false; fetched = [];
-const hit = await run('fetch', { request: { method: 'GET', url: 'https://x.test/akrynoid/game.js', mode: 'no-cors' } });
+const hit = await run('fetch', { request: { method: 'GET', url: 'https://x.test/arktrix/game.js', mode: 'no-cors' } });
 t.ok(hit === 'cached:game.js' && fetched.length === 0, 'fetch: cache-first, served offline without touching the network');
-const hit2 = await run('fetch', { request: { method: 'GET', url: 'https://x.test/akrynoid/lib/anchor-loop.js?v=1', mode: 'no-cors' } });
+const hit2 = await run('fetch', { request: { method: 'GET', url: 'https://x.test/arktrix/lib/anchor-loop.js?v=1', mode: 'no-cors' } });
 t.ok(hit2 === 'cached:lib/anchor-loop.js', 'fetch: query strings are ignored when matching the cache');
-const nav = await run('fetch', { request: { method: 'GET', url: 'https://x.test/akrynoid/nowhere', mode: 'navigate' } });
+const nav = await run('fetch', { request: { method: 'GET', url: 'https://x.test/arktrix/nowhere', mode: 'navigate' } });
 t.ok(nav === 'cached:index.html', 'fetch: offline navigation to an unknown URL falls back to index.html');
 online = true; fetched = [];
-const miss = await run('fetch', { request: { method: 'GET', url: 'https://x.test/akrynoid/extra.txt', mode: 'no-cors' } });
+const miss = await run('fetch', { request: { method: 'GET', url: 'https://x.test/arktrix/extra.txt', mode: 'no-cors' } });
 t.ok(fetched.length === 1 && miss.ok, 'fetch: uncached same-origin asset goes to the network');
 let handled = false; listeners.fetch({ request: { method: 'POST', url: 'https://x.test/a' }, respondWith: () => { handled = true; } });
 listeners.fetch({ request: { method: 'GET', url: 'https://other.test/a' }, respondWith: () => { handled = true; } });

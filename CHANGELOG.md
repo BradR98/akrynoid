@@ -1,5 +1,8 @@
 # Changelog
 
+## Naming cleanup
+- Arktrix is the only user-facing / documented name. Removed the earlier project names from docs, `package.json`, comments and tests (test URLs now use `/arktrix/`). `RR10021947` remains as the internal project ID (storage keys, cache prefix, test suite). Corrected README: leaderboard key is `RR10021947.leaderboard`, test file is `test/RR10021947.test.mjs`. No behaviour change, so no version bump.
+
 ## Phase 12 - Opt-in DOM HUD (v14)
 - `lib/anchor-ui.js`: new optional export `initAnchorHUD({ stage, W, H, hudH, padLeft, padRight })` returning `updateHUD({ level, score, high })`. `createControls` is unchanged.
   - Renders LEVEL / SCORE / HI as a click-through, `nowrap` flex strip inside the 40px `HUD_H` band (`#anchor-hud`); font is `max(12px, 3.5cqw)` (falls back to `vmin`) so it scales with the stage.
@@ -10,13 +13,13 @@
 - Tests: new `test/hud.test.mjs` (11 checks: headless no-op, layout props, dirty-check, coercion). Whole suite green.
 
 ## Phase 6.1
-- Extra-life pill `P` (+1 life): drops only from level 11 on (after level 10), 6% of drops; lives cap at 5 (bonus 1000 at the cap). `sw.js` cache `akrynoid-v7`.
+- Extra-life pill `P` (+1 life): drops only from level 11 on (after level 10), 6% of drops; lives cap at 5 (bonus 1000 at the cap). `sw.js` cache `arktrix-v7`.
 
 ## Phase 6
 - Procedural 100-level campaign (`levels.js`), replacing the three hand-written levels; `validateLevel` + tests over all 100.
 - Top-10 leaderboard with 3-character names (`leaderboard.js`), new `NAME_ENTRY` loop state, on-canvas initials wheel on the steering rail (+ keyboard on desktop), leaderboard on the game-over screen, round counter in the HUD.
 - `AnchorLoop`: `NAME_ENTRY` state (`GAMEOVER -> NAME_ENTRY -> GAMEOVER`); headless runner treats it as an ended run.
-- `sw.js`: cache `akrynoid-v6`, precaches `levels.js` and `leaderboard.js` (new test checks every module `game.js` imports is precached).
+- `sw.js`: cache `arktrix-v6`, precaches `levels.js` and `leaderboard.js` (new test checks every module `game.js` imports is precached).
 - `tools/gauntlet.mjs` bot gauntlet.
 
 ### Measured: 100-level gauntlet (40 seeded runs per bot, 3 lives for the whole campaign)
@@ -33,13 +36,13 @@ The campaign is completable (every level is clearable: the tracker never times o
 - Replaced the split-screen scheme (top-80% action zone, absolute steering) with one-handed controls on the bottom rail.
 - `AnchorInput`: `relative: true` delta steering (no teleport on touch; anchor re-bases at edges and on `setBounds`), tap detection (`tapMs` 200 / `tapPx` 10) firing `onAction`; presses outside the rail are ignored. Legacy absolute / whole-screen mode unchanged.
 - Game: rail tap launches a caught ball / fires lasers; a tap that only starts / resumes / restarts the game is not also an in-game action.
-- `sw.js` cache bumped `akrynoid-v4` -> `akrynoid-v5` so returning devices download the new controls.
+- `sw.js` cache bumped `arktrix-v4` -> `arktrix-v5` so returning devices download the new controls.
 - Tests: new relative-steering, tap-threshold and START-tap cases (106 game checks). Bots unchanged (they drive `feed()` / `act()`): 100/100 wins at 1200 s, same as Phase 4.
 
 ## Phase 4
 - Mercy Aim (anti-stall v2): 12-15 s without brick damage -> next paddle/wall bounce nudged by a random +-3..5 deg.
 - PWA: `manifest.json`, generated icons (180/192/512), cache-first `sw.js`, meta tags + SW registration in `index.html`.
-- Tests: Mercy Aim cases in `akrynoid.test.mjs`; new `pwa.test.mjs` (manifest, icons, precache list vs files on disk, SW behaviour in a sandbox).
+- Tests: Mercy Aim cases in `arktrix.test.mjs`; new `pwa.test.mjs` (manifest, icons, precache list vs files on disk, SW behaviour in a sandbox).
 
 ### Measured (100 seeded runs, same tracker bot with aim noise, 3-level campaign)
 | Cap | Wins | Timeouts |
@@ -52,7 +55,7 @@ Campaign time for the bot: median 499 s, p90 575 s, max 629 s (about 150-180 s p
 
 ## Phase 3
 - `AnchorInput`: opt-in split-screen (`steerFrac`), `onAction` / `listen()` / `act()`, per-pointer steering ownership. Legacy behaviour unchanged.
-- Akrynoid: Laser fire and Catch release moved to the action zone; paddle moved up (y 488) so the rail strip does not cover it.
+- Arktrix: Laser fire and Catch release moved to the action zone; paddle moved up (y 488) so the rail strip does not cover it.
 - Ball anti-stall monitor (flat bounce and pure-vertical loop), `stats().stalls`.
 - Screen shake, pooled particle bursts.
 - Headless bot result: bot win rate at the 400 s cap is *not* improved (see below).

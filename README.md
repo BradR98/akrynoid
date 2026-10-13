@@ -1,6 +1,6 @@
-# Akrynoid / Arcade Anchor framework
+# Arktrix / Arcade Anchor framework
 
-Reusable, dependency-free ES6 modules in `lib/` that any mobile arcade game can call, plus **Akrynoid** (an Arkanoid-style game, Phase 2 engine in `game.js`).
+Reusable, dependency-free ES6 modules in `lib/` that any mobile arcade game can call, plus **Arktrix** (an Arkanoid-style game, Phase 2 engine in `game.js`).
 
 | Module | Role |
 |---|---|
@@ -23,7 +23,7 @@ Balancing: `runBatch({ createGame, bot: bots.tracker({ target: o => o.ball.x, ma
 ### Anchor HUD (opt-in, Phase 12)
 `initAnchorHUD({ stage, W, H, hudH })` (in `lib/anchor-ui.js`) returns `updateHUD({ level, score, high })`, a DOM Level / Score / High strip inside the top `hudH` band. It only touches the DOM when a value changes and does nothing without a DOM. `createControls` is unaffected; games that do not call it are unchanged. Arktrix feeds it from `game.hud()` in `mount()`.
 
-## Akrynoid (Phase 2 engine)
+## Arktrix (Phase 2 engine)
 
 `index.html` + `game.js` (serve over http: `python3 -m http.server`, open on a phone).
 
@@ -34,7 +34,7 @@ Balancing: `runBatch({ createGame, bot: bots.tracker({ target: o => o.ball.x, ma
 - **Speed:** +2% per destroyed brick (cap 1.8x), reset on life loss and each new level.
 - **Capsules (10% from Standard/Silver):** E expand (+50%), C catch, L laser (C and L replace each other), D disruption (+2 balls), P extra life (pink; only drops after level 10, ~6% of drops, lives cap at 5 - at the cap it pays 1000 points).
 - **States:** `LEVEL_CLEAR` was added to `AnchorLoop` (`PLAY -> LEVEL_CLEAR -> PLAY`); `GAMEOVER` at 0 lives or after the last level (win).
-- Tests: `npm test` (lib + `test/akrynoid.test.mjs`).
+- Tests: `npm test` (lib + `test/RR10021947.test.mjs`).
 
 ### Phase 3 (input segregation, anti-stall, juice)
 - **Anti-stall:** each ball watches its own direction; if `|vy|` stays under 0.3 (flat bounce) - or `|vx|` under 0.05 (pure vertical loop) - for 3 s, that component is nudged by 0.3 on the unit direction (the ball's speed is separate, so this is the equivalent of the +-1.5 px/s-scale `vy` nudge) and the direction is renormalised. Counted in `stats().stalls`.
@@ -47,7 +47,7 @@ Balancing: `runBatch({ createGame, bot: bots.tracker({ target: o => o.ball.x, ma
 
 ### Phase 6 (procedural campaign + leaderboard)
 - **`levels.js`:** `generateLevel(i)` builds the 100-level campaign mathematically (pure, seeded, symmetric). Rows grow 4 -> 11; Standard-only until level 5, then Silver from ~6% to 60% of bricks; Gold from level 15 (1 mirrored pair, up to 5 pairs, never more than 10% of the bricks). Gold is only ever placed as isolated singles / mirrored pairs, so it can't wall the field (`validateLevel` enforces it; tests run it over all 100 levels). Level 1 is a solid wall, later levels carve seeded shapes (pyramid, diamond, stripes, columns, ...).
-- **`leaderboard.js`:** Top-10 table of 3-character names in `localStorage` (`akrynoid.leaderboard`), sanitised on load. A score qualifies if it beats 10th place (or the table has a free row) and is > 0.
+- **`leaderboard.js`:** Top-10 table of 3-character names in `localStorage` (`RR10021947.leaderboard`), sanitised on load. A score qualifies if it beats 10th place (or the table has a free row) and is > 0.
 - **Flow:** `PLAY -> GAMEOVER -> NAME_ENTRY -> GAMEOVER`. At the end of a run (0 lives or level 100 cleared) a qualifying score enters `NAME_ENTRY`; saving returns to the game-over screen, which shows the Top 10 with your row blinking. Non-qualifying runs go straight to that screen.
 - **Initials entry:** an on-canvas arcade wheel driven by the steering rail (no keyboard pop-up on phones): drag left/right to scroll A-Z + DEL + END (14 px per symbol), tap to pick; after the third letter the wheel jumps to END. Desktop: type letters/digits, Backspace, Enter. Input is ignored for the first 0.7 s (a finger still down from play), and a restart tap is ignored for 0.6 s so the board can't be skipped by accident.
 - **Headless:** `node tools/gauntlet.mjs [runs] [maxSeconds]` runs seeded bots through all 100 levels. `createGame(..., { nameEntry: false })` skips the leaderboard for bots.
