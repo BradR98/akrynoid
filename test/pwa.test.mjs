@@ -12,7 +12,8 @@ const t = createTester();
 const m = JSON.parse(read('manifest.json'));
 t.ok(m.name === 'Arktrix' && m.short_name === 'Arktrix', 'manifest: name + short_name');
 t.ok(m.display === 'fullscreen' && m.orientation === 'portrait', 'manifest: fullscreen, portrait');
-t.ok(/^#0[0-9a-f]{5}$/i.test(m.background_color) && /^#0[0-9a-f]{5}$/i.test(m.theme_color), 'manifest: dark background_color + theme_color');
+const lum = (h) => { const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+t.ok(/^#[0-9a-f]{6}$/i.test(m.background_color) && /^#[0-9a-f]{6}$/i.test(m.theme_color) && lum(m.background_color) < 0.1 && lum(m.theme_color) < 0.1, 'manifest: dark background_color + theme_color (luminance < 0.1)');
 t.ok(m.start_url && m.scope, 'manifest: start_url + scope are relative (works under /arktrix/)');
 for (const size of [192, 512]) {
   const ic = m.icons.find((i) => i.sizes === `${size}x${size}`);

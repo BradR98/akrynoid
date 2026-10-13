@@ -20,6 +20,9 @@ Balancing: `runBatch({ createGame, bot: bots.tracker({ target: o => o.ball.x, ma
 
 `npm test` runs `test/anchor.test.mjs` (37 checks, Node 18+, no install).
 
+### Themes (Phase 11)
+`THEMES` in `game.js` holds the palettes; set `GAME_CONFIG.theme` to `"default"` or `"spooky"` (unknown names fall back to `default`). A theme colours the canvas (background, bricks, paddle, ball, HUD bar, lives) and sets `--arcade-*` variables for the DOM HUD. Silver / gold bricks and capsules keep fixed colours because they carry gameplay meaning.
+
 ### Anchor HUD (opt-in, Phase 12)
 `initAnchorHUD({ stage, W, H, hudH })` (in `lib/anchor-ui.js`) returns `updateHUD({ level, score, high })`, a DOM Level / Score / High strip inside the top `hudH` band. It only touches the DOM when a value changes and does nothing without a DOM. `createControls` is unaffected; games that do not call it are unchanged. Arktrix feeds it from `game.hud()` in `mount()`.
 

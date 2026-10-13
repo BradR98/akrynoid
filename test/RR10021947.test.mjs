@@ -287,7 +287,7 @@ const cellCenter = (r, c) => [(c + 0.5) * G.BW, G.GRID_TOP + (r + 0.5) * G.BH];
   const b = I.balls[0]; const [x, y] = cellCenter(0, 0);
   place(b, x, y + G.BH / 2 + G.BALL_R - 1, 0, -1); game.update(1 / 300);
   const n = I.fx.active; t.ok(n >= 5 && n <= 10, `standard brick destroyed -> burst of 5-10 particles (${n})`);
-  const col = I.fx.col[I.fx.life.findIndex((l) => l > 0)]; t.ok(col === '#e53935', 'particles match the brick colour (row 0 red)');
+  const col = I.fx.col[I.fx.life.findIndex((l) => l > 0)]; t.ok(col === G.THEMES[G.GAME_CONFIG.theme].bricks[0], 'particles match the brick colour (row 0 of the active theme)');
   const [sx, sy] = cellCenter(0, 1); let before = I.fx.active;
   for (let hit = 0; hit < 3; hit++) { place(b, sx, sy + G.BH / 2 + G.BALL_R - 1, 0, -1); game.update(1 / 300); if (hit < 2) t.ok(I.fx.active === before, `silver hit ${hit + 1}: no burst until destroyed`); }
   t.ok(I.fx.active - before >= 5 && I.fx.active - before <= 10, 'silver destroyed -> burst');

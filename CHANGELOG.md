@@ -1,5 +1,12 @@
 # Changelog
 
+## Phase 11 - Seasonal theme switcher (v15)
+- `game.js`: new exported `THEMES` dictionary below `GAME_CONFIG` with `default` (the previous navy / periwinkle / rainbow-brick palette, unchanged) and `spooky` (bg `#1a0b2e`, paddle `#39ff14`, ball `#f8f8ff`, bricks pumpkin `#ff7518` / blood `#8a0303` / purple `#4b0082`, orange lives and HUD labels).
+- `createGame()` resolves `activeTheme = THEMES[opts.theme || GAME_CONFIG.theme] || THEMES.default`; the single inline `draw()` (there are no separate drawPaddle / drawBall / drawBricks / drawLives functions) now reads background, playfield, bricks, paddle, ball, HUD bar / divider and lives from it, as do the brick-break particles. Silver / gold bricks, laser / catch paddle tints and capsule colours stay fixed because they carry gameplay meaning.
+- `mount()` applies the theme's `--arcade-*` variables to the stage, so the DOM HUD (Phase 12) renders orange labels with an orange glow over the dark background; page and manifest background / theme colour are `#1a0b2e`.
+- `GAME_CONFIG.theme` is now `"spooky"`. Cache `RR10021947-v15`, `version.js` `v15`.
+- Tests: new `test/theme.test.mjs` (12 checks: palettes drawn through the real `draw()`, default look unchanged, fallback for unknown names, gold unthemed). Two existing assertions updated: particle colour follows the active theme; manifest "dark colour" check uses luminance instead of a `#0...` prefix.
+
 ## Naming cleanup
 - Arktrix is the only user-facing / documented name. Removed the earlier project names from docs, `package.json`, comments and tests (test URLs now use `/arktrix/`). `RR10021947` remains as the internal project ID (storage keys, cache prefix, test suite). Corrected README: leaderboard key is `RR10021947.leaderboard`, test file is `test/RR10021947.test.mjs`. No behaviour change, so no version bump.
 

@@ -25,7 +25,27 @@ import { createAudio } from './lib/anchor-audio.js';
 import { createControls, initAnchorHUD } from './lib/anchor-ui.js';
 import { BUILD_VERSION } from './version.js';
 
-export const GAME_CONFIG = { title: "Arktrix", theme: "default" };
+export const GAME_CONFIG = { title: "Arktrix", theme: "spooky" };
+
+/**
+ * Seasonal palettes. Only decoration is themed: silver / gold bricks and capsule colours stay fixed because they carry gameplay meaning (HP, indestructible, power-up type).
+ *   background / field  full-canvas fill / playfield fill      paddle / paddleCap  paddle body / its end caps      ball
+ *   bricks              row colours, cycled by row index       hudBar / hudLine    top bar fill / divider          hudText / livesTrim  lives icons body / trim
+ *   css                 --arcade-* variables for the DOM HUD (see lib/anchor-ui.js); empty = Anchor defaults
+ */
+export const THEMES = {
+  default: {
+    background: '#05060f', field: '#0b0f26', paddle: '#9aa5ff', paddleCap: '#cfd8ff', ball: '#fff',
+    bricks: ['#e53935', '#fb8c00', '#fdd835', '#43a047', '#00acc1', '#1e88e5', '#8e24aa', '#ec407a'],
+    hudBar: '#000', hudLine: '#1d2350', hudText: '#9aa5ff', livesTrim: '#cfd8ff', css: {},
+  },
+  spooky: {
+    background: '#1a0b2e', field: '#1a0b2e', paddle: '#39ff14', paddleCap: '#b8ffa6', ball: '#f8f8ff',
+    bricks: ['#ff7518', '#8a0303', '#4b0082'],
+    hudBar: '#0d0518', hudLine: '#4b0082', hudText: '#ff7518', livesTrim: '#ffc58f',
+    css: { '--arcade-text-color': '#fff', '--arcade-label-color': '#ff7518', '--arcade-accent-color': '#ff7518', '--arcade-glow': '0 0 6px rgba(255,117,24,0.8), 1px 1px 0 #000' },
+  },
+};
 
 export { generateLevel, CAMPAIGN_LEVELS };
 
@@ -54,7 +74,6 @@ export const CENTER_SPREAD = 8 * Math.PI / 180;
 
 export const KIND = Object.freeze({ EMPTY: 0, STANDARD: 1, SILVER: 2, GOLD: 3 });
 export const SILVER_HP = 3;
-const ROW_COLORS = ['#e53935', '#fb8c00', '#fdd835', '#43a047', '#00acc1', '#1e88e5', '#8e24aa', '#ec407a'];
 const SILVER_SHADES = ['', '#7d8696', '#aeb6c4', '#e8ecf3'];   // indexed by remaining HP
 const CAP_TYPES = ['E', 'C', 'L', 'D'];
 const CAP_COLORS = { E: '#1e88e5', C: '#43a047', L: '#e53935', D: '#00acc1', P: '#ec407a' };
@@ -203,6 +222,7 @@ class Bricks {
 export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   const levelCount = opts.levels ? opts.levels.length : (opts.levelCount || CAMPAIGN_LEVELS);
   const getLevel = (i) => (opts.levels ? opts.levels[i] : (opts.levelFn || generateLevel)(i));
+  const activeTheme = THEMES[opts.theme || GAME_CONFIG.theme] || THEMES.default;   // opts.theme lets tests pick a palette without touching GAME_CONFIG
   const nameEntryOn = opts.nameEntry !== false;
   const emit = opts.onEvent || (() => {});
   const onLevelClear = opts.onLevelClear || ((g) => { g.nextLevel(); loop.start(); });
@@ -280,7 +300,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
     }
     idleT = 0; mercyArmed = false;                                                        // any damage (hit or kill) counts as progress
     if (res === 1) { addScore(5); emit('hard'); return; }
-    fx.burst(((i % COLS) + 0.5) * BW, GRID_TOP + ((i / COLS | 0) + 0.5) * BH, kind === KIND.SILVER ? SILVER_SHADES[1] : ROW_COLORS[(i / COLS | 0) % ROW_COLORS.length]);
+    fx.burst(((i % COLS) + 0.5) * BW, GRID_TOP + ((i / COLS | 0) + 0.5) * BH, kind === KIND.SILVER ? SILVER_SHADES[1] : activeTheme.bricks[(i / COLS | 0) % activeTheme.bricks.length]);
     addScore(kind === KIND.SILVER ? 50 : 10);
     destroyed++; speedMult = Math.min(MAX_SPEED_MULT, speedMult * SPEED_STEP);
     emit('brick', kind);
@@ -530,7 +550,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
 
     /** Render the whole frame to the main canvas (logical 360x640 coordinates). */
     draw(ctx) {
-      ctx.fillStyle = '#05060f'; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = activeTheme.background; ctx.fillRect(0, 0, W, H);
       // VFX clock: wall-clock based so shake / particles keep animating on LEVEL_CLEAR and GAMEOVER screens too
       const t = now(), fdt = lastDraw ? Math.min(0.05, (t - lastDraw) / 1000) : 0; lastDraw = t;
       fx.step(fdt);
@@ -538,14 +558,14 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
       ctx.save();
       if (shake > 0) ctx.translate((fx.rnd() - 0.5) * 2 * shake, (fx.rnd() - 0.5) * 2 * shake);
       // playfield frame
-      ctx.fillStyle = '#0b0f26'; ctx.fillRect(0, HUD_H, W, H - HUD_H);
+      ctx.fillStyle = activeTheme.field; ctx.fillRect(0, HUD_H, W, H - HUD_H);
 
       // bricks
       for (let r = 0; r < bricks.rows; r++) for (let c = 0; c < COLS; c++) {
         const i = r * COLS + c, k = bricks.kind[i];
         if (k === KIND.EMPTY) continue;
         const x = c * BW, y = GRID_TOP + r * BH;
-        ctx.fillStyle = k === KIND.STANDARD ? ROW_COLORS[r % ROW_COLORS.length] : k === KIND.SILVER ? SILVER_SHADES[bricks.hp[i]] : '#d4a72c';
+        ctx.fillStyle = k === KIND.STANDARD ? activeTheme.bricks[r % activeTheme.bricks.length] : k === KIND.SILVER ? SILVER_SHADES[bricks.hp[i]] : '#d4a72c';
         ctx.fillRect(x + 1, y + 1, BW - 2, BH - 2);
         ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.fillRect(x + 1, y + 1, BW - 2, 3);
         ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(x + 1, y + BH - 3, BW - 2, 2);
@@ -569,22 +589,22 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
 
       // paddle (Vaus)
       const px = paddle.x - paddle.w / 2;
-      ctx.fillStyle = '#9aa5ff'; ctx.fillRect(px, paddle.top, paddle.w, paddle.h);
-      ctx.fillStyle = laserOn ? '#ff5252' : catchOn ? '#43a047' : '#cfd8ff'; ctx.fillRect(px, paddle.top, 8, paddle.h); ctx.fillRect(px + paddle.w - 8, paddle.top, 8, paddle.h);
+      ctx.fillStyle = activeTheme.paddle; ctx.fillRect(px, paddle.top, paddle.w, paddle.h);
+      ctx.fillStyle = laserOn ? '#ff5252' : catchOn ? '#43a047' : activeTheme.paddleCap; ctx.fillRect(px, paddle.top, 8, paddle.h); ctx.fillRect(px + paddle.w - 8, paddle.top, 8, paddle.h);
       ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(px + 8, paddle.top + 1, paddle.w - 16, 2);
 
       // balls
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = activeTheme.ball;
       for (const b of balls) if (b.active) { ctx.beginPath(); ctx.arc(b.x, b.y, BALL_R, 0, 6.2832); ctx.fill(); }
 
       // HUD bar
-      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, HUD_H);
-      ctx.fillStyle = '#1d2350'; ctx.fillRect(0, HUD_H - 2, W, 2);
+      ctx.fillStyle = activeTheme.hudBar; ctx.fillRect(0, 0, W, HUD_H);
+      ctx.fillStyle = activeTheme.hudLine; ctx.fillRect(0, HUD_H - 2, W, 2);
       // Score / High Score / Level text now lives in the Anchor DOM HUD (initAnchorHUD in mount()); lives + divider stay on canvas
       for (let l = 0; l < lives && l < 8; l++) {                                         // remaining lives as mini Vaus icons
         const lx = W - 12 - (l + 1) * 24 + 24;
-        ctx.fillStyle = '#9aa5ff'; ctx.fillRect(lx - 22, 14, 20, 7);
-        ctx.fillStyle = '#cfd8ff'; ctx.fillRect(lx - 22, 14, 4, 7); ctx.fillRect(lx - 6, 14, 4, 7);
+        ctx.fillStyle = activeTheme.hudText; ctx.fillRect(lx - 22, 14, 20, 7);
+        ctx.fillStyle = activeTheme.livesTrim; ctx.fillRect(lx - 22, 14, 4, 7); ctx.fillRect(lx - 6, 14, 4, 7);
       }
 
       // overlays driven by the Anchor state machine
@@ -686,6 +706,9 @@ export function mount(stage, canvas) {
     else if (loop.state === State.PAUSE) loop.resume();
     else if (loop.state === State.GAMEOVER && game.canRestart()) { game.restart(); loop.reset(); loop.start(); }
   }
+  const theme = THEMES[GAME_CONFIG.theme] || THEMES.default;
+  for (const [k, v] of Object.entries(theme.css)) stage.style.setProperty(k, v);   // DOM HUD + controls pick the palette up via --arcade-* variables
+  document.body.style.background = theme.background; document.documentElement.style.background = theme.background;
   const updateHUD = initAnchorHUD({ stage, W, H, hudH: HUD_H, padLeft: 12, padRight: 130 });   // emoji buttons sit top-right
   loop = new AnchorLoop({
     update: (dt) => game.update(dt),                       // update(delta) hook

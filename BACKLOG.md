@@ -8,6 +8,11 @@ Prioritised next steps for Arktrix (game `RR10021947`, build `v14`).
 - [ ] **Anchor `anchor-ui.js` divergence.** `arktrix` (emoji buttons) differs from the pixel-icon version in `mob-swarm`, `arkanoid` and `mob-swarm-2`. Decide the canonical `createControls`; until then do not run `sync-anchor.sh` from the workspace root.
 - [ ] Push `main` to `origin` (local commits are ahead of `origin/main`).
 
+## Themes
+- [ ] Theme the steering rail (it is drawn by `lib/anchor-input.js`, which has no theme hooks yet; patch `anchor-core-lib` and sync).
+- [ ] Contrast: dark purple bricks (`#4b0082`) are the least visible against `#1a0b2e`; check on a phone and lighten if needed.
+- [ ] Selecting a theme is a one-line `GAME_CONFIG.theme` change; consider a URL / settings switch and a date-based auto season.
+
 ## Gameplay
 - [ ] Balance: the bot gauntlet shows only the unlimited-speed tracker clears 100 levels; "fast thumb" reaches level 52 (median), "average thumb" 14. Revisit speed ramp / lives for a human-completable campaign.
 - [ ] Optionally show title / version in the PAUSE or START overlay (already drawn bottom-right on those screens).
