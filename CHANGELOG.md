@@ -1,5 +1,14 @@
 # Changelog
 
+## Phase 12 - Opt-in DOM HUD (v14)
+- `lib/anchor-ui.js`: new optional export `initAnchorHUD({ stage, W, H, hudH, padLeft, padRight })` returning `updateHUD({ level, score, high })`. `createControls` is unchanged.
+  - Renders LEVEL / SCORE / HI as a click-through, `nowrap` flex strip inside the 40px `HUD_H` band (`#anchor-hud`); font is `max(12px, 3.5cqw)` (falls back to `vmin`) so it scales with the stage.
+  - Dirty-checked: the DOM is touched only when level, score or high changed. No-op without a DOM (headless tests). Values are coerced to numbers, so no markup can be injected.
+- `game.js`: Score / High Score / Level text removed from the canvas. The black bar, divider and lives (mini paddles) are still drawn on canvas. `mount()` calls `updateHUD(game.hud())` each frame; `game.hud()` reuses one object (no per-frame allocation) and passes the existing `high`.
+- Title / version / build intentionally not shown in the gameplay bar (does not fit cleanly at 360px). Version strings still come only from `version.js`.
+- `sw.js` cache `RR10021947-v14` and `version.js` `v14`. `test/pwa.test.mjs` now compares `sw.js` against `version.js` instead of hardcoding a number.
+- Tests: new `test/hud.test.mjs` (11 checks: headless no-op, layout props, dirty-check, coercion). Whole suite green.
+
 ## Phase 6.1
 - Extra-life pill `P` (+1 life): drops only from level 11 on (after level 10), 6% of drops; lives cap at 5 (bonus 1000 at the cap). `sw.js` cache `akrynoid-v7`.
 

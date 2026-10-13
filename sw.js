@@ -2,7 +2,7 @@
  * Akrynoid service worker: precache the whole app, then serve cache-first so it loads instantly and runs offline.
  * IMPORTANT: cache-first means returning players keep the cached build until CACHE changes. Bump the version below on every deploy.
  */
-const CACHE = 'RR10021947-v13';
+const CACHE = 'RR10021947-v14';
 const PRECACHE = [
   './',
   'index.html',

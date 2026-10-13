@@ -20,6 +20,9 @@ Balancing: `runBatch({ createGame, bot: bots.tracker({ target: o => o.ball.x, ma
 
 `npm test` runs `test/anchor.test.mjs` (37 checks, Node 18+, no install).
 
+### Anchor HUD (opt-in, Phase 12)
+`initAnchorHUD({ stage, W, H, hudH })` (in `lib/anchor-ui.js`) returns `updateHUD({ level, score, high })`, a DOM Level / Score / High strip inside the top `hudH` band. It only touches the DOM when a value changes and does nothing without a DOM. `createControls` is unaffected; games that do not call it are unchanged. Arktrix feeds it from `game.hud()` in `mount()`.
+
 ## Akrynoid (Phase 2 engine)
 
 `index.html` + `game.js` (serve over http: `python3 -m http.server`, open on a phone).

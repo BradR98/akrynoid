@@ -22,7 +22,7 @@ import { generateLevel, CAMPAIGN_LEVELS } from './levels.js';
 import { loadBoard, saveBoard, qualifies, insertScore, cleanName, LB_SIZE, NAME_LEN } from './lib/anchor-leaderboard.js';
 import { loadState, saveState, clearState } from './lib/anchor-save.js';
 import { createAudio } from './lib/anchor-audio.js';
-import { createControls } from './lib/anchor-ui.js';
+import { createControls, initAnchorHUD } from './lib/anchor-ui.js';
 import { BUILD_VERSION } from './version.js';
 
 export const GAME_CONFIG = { title: "Arktrix", theme: "default" };
@@ -233,6 +233,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
   const kick = (mag) => { if (mag > shake) shake = mag; };
   const pad6 = (n) => String(n).padStart(6, '0');
   let scoreStr = pad6(score), highStr = '000000';
+  const hudStats = { level: 1, score: 0, high: 0 };
   let board = loadBoard(storage, 'RR10021947.leaderboard'), lastRank = -1, overAt = 0, roundStr = 'RD 1';
   let entryName = '', entryX = 0, entryT0 = 0, pressOk = false, lbLines = [];
   try { high = Math.max(board.length ? board[0].score : 0, storage ? (parseInt(storage.getItem(LEGACY_HS_KEY), 10) || 0) : 0); } catch (_) { high = board.length ? board[0].score : 0; }
@@ -579,12 +580,7 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
       // HUD bar
       ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, HUD_H);
       ctx.fillStyle = '#1d2350'; ctx.fillRect(0, HUD_H - 2, W, 2);
-      ctx.font = 'bold 11px "Courier New", monospace'; ctx.textBaseline = 'top';
-      ctx.textAlign = 'left'; ctx.fillStyle = '#ff3b3b'; ctx.fillText('SCORE', 10, 5);
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 15px "Courier New", monospace'; ctx.fillText(scoreStr, 10, 19);
-      ctx.textAlign = 'center'; ctx.font = 'bold 11px "Courier New", monospace'; ctx.fillStyle = '#ff3b3b'; ctx.fillText('HIGH SCORE', W / 2, 5);
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 15px "Courier New", monospace'; ctx.fillText(highStr, W / 2, 19);
-      ctx.textAlign = 'right'; ctx.font = 'bold 10px "Courier New", monospace'; ctx.fillStyle = '#9aa5ff'; ctx.fillText(roundStr, W - 10, 27);
+      // Score / High Score / Level text now lives in the Anchor DOM HUD (initAnchorHUD in mount()); lives + divider stay on canvas
       for (let l = 0; l < lives && l < 8; l++) {                                         // remaining lives as mini Vaus icons
         const lx = W - 12 - (l + 1) * 24 + 24;
         ctx.fillStyle = '#9aa5ff'; ctx.fillRect(lx - 22, 14, 20, 7);
@@ -620,6 +616,9 @@ export function createGame({ input, rng = Math.random, loop }, opts = {}) {
       }
       ctx.restore();
     },
+
+    /** Live values for the Anchor DOM HUD. Returns one reused object (no per-frame allocation). */
+    hud() { hudStats.level = level + 1; hudStats.score = score; hudStats.high = high; return hudStats; },
 
     /* ---- Anchor headless contract ---- */
     observe() {
@@ -687,9 +686,10 @@ export function mount(stage, canvas) {
     else if (loop.state === State.PAUSE) loop.resume();
     else if (loop.state === State.GAMEOVER && game.canRestart()) { game.restart(); loop.reset(); loop.start(); }
   }
+  const updateHUD = initAnchorHUD({ stage, W, H, hudH: HUD_H, padLeft: 12, padRight: 130 });   // emoji buttons sit top-right
   loop = new AnchorLoop({
     update: (dt) => game.update(dt),                       // update(delta) hook
-    draw: () => game.draw(ctx),                            // draw(ctx) hook
+    draw: () => { game.draw(ctx); updateHUD(game.hud()); },   // draw(ctx) hook; updateHUD only touches the DOM when a value changed
     onState: () => { if (controls) controls.sync(); }
   });
   controls = createControls({ stage, loop, audio, W, H });
